@@ -30,7 +30,7 @@ $EXPORT_TAGS{ all } = [@EXPORT_OK];
 
 our $DIE_ON_ERROR;
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 sub import {
     my $pkg = shift;
@@ -272,7 +272,7 @@ sub validaddr {
     my @octets = split(/\./, $ip);
     return unless scalar @octets == 4;
     for (@octets) {
-        return unless $_ >= 0 && $_ <= 255;
+        return unless defined $_ && $_ >= 0 && $_ <= 255;
     }
     return 1;
 }
@@ -303,7 +303,7 @@ Net::IPAddress::Util - Version-agnostic representation of an IP address
 
 =head1 VERSION
 
-Version 0.01
+Version 0.03
 
 =head1 SYNOPSIS
 

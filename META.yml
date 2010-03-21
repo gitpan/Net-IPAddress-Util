@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               Net-IPAddress-Util
-version:            0.02
+version:            0.03
 abstract:           Version-agnostic representation of an IP address
 author:
     - Paul Bennett <paul.w.bennett@gmail.com>

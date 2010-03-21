@@ -1,5 +1,8 @@
 Revision history for Net-IPAddress-Util
 
+0.03    2010-03-21
+        Added tests for compatibility API.
+
 0.02    2010-03-21
         Fixed bugs in ip2num() and num2ip(). Fixed distro name in Changes file.
 
