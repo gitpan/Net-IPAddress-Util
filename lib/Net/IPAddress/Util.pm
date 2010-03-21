@@ -30,7 +30,7 @@ $EXPORT_TAGS{ all } = [@EXPORT_OK];
 
 our $DIE_ON_ERROR;
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 sub import {
     my $pkg = shift;
@@ -255,13 +255,14 @@ sub ip2num {
     carp('Compatibility function ip2num() is deprecated') if $^W;
     my $ip = shift;
     my $self = __PACKAGE__->new($ip);
+    $self &= hex('0xffffffff');
     return $self->as_int();
 }
 
 sub num2ip {
     carp('Compatibility function num2ip() is deprecated') if $^W;
     my $num = shift;
-    my $self = __PACKAGE__->new($num);
+    my $self = n32_to_ipv4($num);
     return $self->str();
 }
 

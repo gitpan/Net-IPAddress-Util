@@ -1,5 +1,8 @@
-Revision history for IPAddress-Simple
+Revision history for Net-IPAddress-Util
 
-0.01    Date/time
+0.02    2010-03-21
+        Fixed bugs in ip2num() and num2ip(). Fixed distro name in Changes file.
+
+0.01    2010-03-21
         First version, released on an unsuspecting world.
 
