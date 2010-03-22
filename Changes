@@ -1,5 +1,8 @@
 Revision history for Net-IPAddress-Util
 
+0.04    2010-03-21
+        Added more tests for compatibility API. Now at 75.9% coverage.
+
 0.03    2010-03-21
         Added tests for compatibility API.
 

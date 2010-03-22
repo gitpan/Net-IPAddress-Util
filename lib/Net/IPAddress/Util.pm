@@ -30,7 +30,7 @@ $EXPORT_TAGS{ all } = [@EXPORT_OK];
 
 our $DIE_ON_ERROR;
 
-our $VERSION = '0.03';
+our $VERSION = '0.04';
 
 sub import {
     my $pkg = shift;
@@ -282,8 +282,6 @@ sub mask {
     my ($ip, $mask) = @_;
     my $self = __PACKAGE__->new($ip);
     my $nm   = __PACKAGE__->new($mask);
-    $self &= hex('0xffffffff');
-    $nm   &= hex('0xffffffff');
     return $self & $nm;
 }
 
@@ -303,7 +301,7 @@ Net::IPAddress::Util - Version-agnostic representation of an IP address
 
 =head1 VERSION
 
-Version 0.03
+Version 0.04
 
 =head1 SYNOPSIS
 
