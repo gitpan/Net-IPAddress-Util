@@ -22,23 +22,21 @@ SKIP: {
     my $std_hn   = 'www';
     my $std_dn   = 'cpan.org';
 
-    eval { use Net::IPAddress qw() };
-    skip("Net::IPAddress cannot be loaded: $@", 5) if $@;
-
-    eval {
-        use Net::IPAddress qw();
+    {
+        eval "require Net::IPAddress";
+        skip("Net::IPAddress cannot be loaded: $@", 5) if $@;
         $old_num = Net::IPAddress::ip2num($std_dq);
         $old_dq  = Net::IPAddress::num2ip($std_num);
         $old_vld = Net::IPAddress::validaddr($std_dq) || 0;
         $old_nvd = Net::IPAddress::validaddr('foo')   || 0;
         $old_msk = Net::IPAddress::mask($std_dq, '255.255.255.0');
         ($old_hn, $old_dn) = Net::IPAddress::fqdn($std_fqdn);
-    };
+    }
 
     diag('Some deprecation warnings here are normal');
 
-    eval {
-        use Net::IPAddress::Util qw();
+    {
+        eval "require Net::IPAddress::Util";
         $new_num = Net::IPAddress::Util::ip2num($std_dq);
         $new_dq  = Net::IPAddress::Util::num2ip($std_num);
         $new_vld = Net::IPAddress::Util::validaddr($std_dq) || 0;

@@ -30,7 +30,7 @@ $EXPORT_TAGS{ all } = [@EXPORT_OK];
 
 our $DIE_ON_ERROR;
 
-our $VERSION = '0.04';
+our $VERSION = '0.05';
 
 sub import {
     my $pkg = shift;

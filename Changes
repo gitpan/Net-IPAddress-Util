@@ -1,5 +1,8 @@
 Revision history for Net-IPAddress-Util
 
+0.05    2010-03-22
+        Make compatability API test better at surviving lack of Net::IPAddress
+
 0.04    2010-03-21
         Added more tests for compatibility API. Now at 75.9% coverage.
 
