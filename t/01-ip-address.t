@@ -6,7 +6,7 @@ use warnings;
 use Net::IPAddress::Util try => 'GMP,Pari', ':all';
 use Net::IPAddress::Util::Range;
 use Net::IPAddress::Util::Collection;
-use Test::More tests => 39;
+use Test::More tests => 41;
 use Time::HiRes qw(time);
 
 $Net::IPAddress::Util::DIE_ON_ERROR = 1;
@@ -120,6 +120,13 @@ $Net::IPAddress::Util::DIE_ON_ERROR = 1;
 {
     my $range = Net::IPAddress::Util::Range->new({ ip => '192.168.0.0', netmask => '255.255.255.0' });
     is("$range" , '(192.168.0.0 .. 192.168.0.255)', "Large IPv4 range via 'netmask' argument");
+}
+
+{
+    local $Net::IPAddress::Util::PROMOTE_N32 = 1;
+    my $ip = Net::IPAddress::Util->new(3232235521);
+    is("$ip", '192.168.0.1', 'PROMOTE_N32');
+    is($ip->as_n32(), 3232235521, 'as_n32()');
 }
 
 

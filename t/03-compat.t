@@ -24,7 +24,7 @@ SKIP: {
 
     {
         eval "require Net::IPAddress";
-        skip("Net::IPAddress cannot be loaded: $@", 5) if $@;
+        skip("Net::IPAddress cannot be loaded for compatibility testing", 5) if $@;
         $old_num = Net::IPAddress::ip2num($std_dq);
         $old_dq  = Net::IPAddress::num2ip($std_num);
         $old_vld = Net::IPAddress::validaddr($std_dq) || 0;

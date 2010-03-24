@@ -29,8 +29,9 @@ our @EXPORT_OK = keys %EXPORT_OK;
 $EXPORT_TAGS{ all } = [@EXPORT_OK];
 
 our $DIE_ON_ERROR;
+our $PROMOTE_N32;
 
-our $VERSION = '0.05';
+our $VERSION = '0.06';
 
 sub import {
     my $pkg = shift;
@@ -72,7 +73,7 @@ sub import {
         $self = __PACKAGE__->new($self) unless ref $self;
         $self |= $IPV4_LO;
         $self &= $IPV4_HI;
-        return $self;
+        return bless $self => __PACKAGE__;
     }
 
 }
@@ -84,6 +85,8 @@ sub new {
     my $address = shift;
 
     my $num;
+
+    return ERROR('Address must be not be less than zero') if $address =~ /^-/;
 
     if ($address =~ /^[0-9a-f]{32}$/) {
         # new() from result of ->normal_form()
@@ -114,6 +117,9 @@ sub new {
     else {
         # new() from bare scalar. You're on your own here, good luck.
         $num = Math::BigInt->new($address);
+        if ($PROMOTE_N32 and $num <= hex('0xffffffff')) {
+            return n32_to_ipv4($num);
+        }
     }
 
     return bless $num => $class;
@@ -122,7 +128,13 @@ sub new {
 sub ipv4 {
     my $self = shift;
     return ERROR('Not an IPv4 adddress') unless $self->is_ipv4();
-    return join '.', unpack 'C4', pack 'N32', $self;
+    return join '.', unpack 'C4', pack 'N32', ($self & hex('0xffffffff'));
+}
+
+sub as_n32 {
+    my $self = shift;
+    return ERROR('Not an IPv4 adddress') unless $self->is_ipv4();
+    return unpack 'N32', pack 'N32', ($self & hex('0xffffffff'));
 }
 
 sub normal_form {
@@ -301,7 +313,7 @@ Net::IPAddress::Util - Version-agnostic representation of an IP address
 
 =head1 VERSION
 
-Version 0.04
+Version 0.06
 
 =head1 SYNOPSIS
 
@@ -359,6 +371,14 @@ consider testing the relative speed of C<radix_sort()> on your platform.
 
 Set to a true value to make errors confess(). Set to a false value to make
 errors cluck(). Defaults to false.
+
+=head2 $Net::IPAddress::Util::PROMOTE_N32
+
+Set to a true value to make new() assume that bare 32-bit (or smaller)
+numbers are supposed to represent IPv4 addresses, and promote them
+accordingly (i.e. to do implicitly what n32_to_ipv4() does). Set to a false
+value to make new() treat all bare numbers as 128-bit numbers representing
+IPv6 addresses. Defaults to false.
 
 =head1 EXPORTABLE FUNCTIONS
 
@@ -465,6 +485,9 @@ object representing the same IPv4 address.
 
 =head1 OBJECT METHODS
 
+All object methods supported by Math::BigInt are supported. In addition, the
+following methods exist specifically for IP Address manipulation:
+
 =head2 is_ipv4
 
 Returns true if this object represents an IPv4 address.
@@ -473,6 +496,12 @@ Returns true if this object represents an IPv4 address.
 
 Returns the dotted-quad representation of this object, or an error if it is
 not an IPv4 address, for instance '192.168.0.1'.
+
+=head2 as_n32
+
+Returns the "N32" representation of this object (that is, a 32-bit number in
+network order) if this object represents an IPv4 address, or an error if it
+does not.
 
 =head2 ipv6
 
