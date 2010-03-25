@@ -16,7 +16,7 @@ if (!$ENV{IP_UTIL_TIME_TRIALS}) {
 }
 else {
     diag('This is going to take a while. Unset $ENV{IP_UTIL_TIME_TRIALS} if you don\'t want time trials.');
-    diag('Using ' . Net::IPAddress::Util->config()->{ lib } . ' ' . IPAddress::Simple->config()->{ lib_version });
+    diag('Using ' . Net::IPAddress::Util->config()->{ lib } . ' ' . Net::IPAddress::Util->config()->{ lib_version });
     {
         my $j = 500;
         while (1) {
