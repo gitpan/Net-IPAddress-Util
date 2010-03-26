@@ -15,7 +15,7 @@ WriteMakefile(
         'Test::More'   => 0,
         'Class::Std'   => 0,
         'Regexp::IPv6' => 0,
-        'Math::BigInt' => 0,
+        'Math::BigInt' => 1.89,
     },
     dist                => { COMPRESS => 'gzip -9f', SUFFIX => 'gz', },
     clean               => { FILES => 'Net-IPAddress-Util-*' },
