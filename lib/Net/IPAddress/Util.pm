@@ -31,7 +31,7 @@ $EXPORT_TAGS{ all } = [@EXPORT_OK];
 our $DIE_ON_ERROR;
 our $PROMOTE_N32;
 
-our $VERSION = '0.08';
+our $VERSION = '0.09';
 
 sub import {
     my $pkg = shift;
@@ -128,13 +128,17 @@ sub new {
 sub ipv4 {
     my $self = shift;
     return ERROR('Not an IPv4 adddress') unless $self->is_ipv4();
-    return join '.', unpack 'C4', pack 'N32', Math::BigInt->new($self & hex('0xffffffff'));
+    my $num = Math::BigInt->new($self);
+    $num &= hex('0xffffffff');
+    return join '.', unpack 'C4', pack 'N32', $num->numify();
 }
 
 sub as_n32 {
     my $self = shift;
     return ERROR('Not an IPv4 adddress') unless $self->is_ipv4();
-    return unpack 'N32', pack 'N32', Math::BigInt->new($self & hex('0xffffffff'));
+    my $num = Math::BigInt->new($self);
+    $num &= hex('0xffffffff');
+    return unpack 'N32', pack 'N32', $num->numify();
 }
 
 sub normal_form {
@@ -313,7 +317,7 @@ Net::IPAddress::Util - Version-agnostic representation of an IP address
 
 =head1 VERSION
 
-Version 0.08
+Version 0.09
 
 =head1 SYNOPSIS
 

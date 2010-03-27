@@ -1,5 +1,8 @@
 Revision history for Net-IPAddress-Util
 
+0.09    2010-03-27
+        Try to be even more bullet-proof wrt the N32 bugs.
+
 0.08    2010-03-25
         Add hopefully more-useful output to the diagnostic tests
 
