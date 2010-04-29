@@ -4,7 +4,6 @@ use strict;
 
 use Carp qw( confess );
 use Class::Std;
-use Net::IPAddress::Util try => 'GMP,Pari';
 use Net::IPAddress::Util::Range;
 
 my %contents :ATTR( :name<contents> :default<[]> );
@@ -78,9 +77,6 @@ sub SPLICE {
 sub _checktype {
     my ($v) = @_;
     return $v if ref $v eq 'Net::IPAddress::Util::Range';
-    if (defined $v and (!ref $v or $v->can('as_int'))) {
-        $v = Net::IPAddress::Util->new($v);
-    }
     if (ref $v eq 'HASH') {
         $v = Net::IPAddress::Util::Range->new($v);
     }

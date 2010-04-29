@@ -31,7 +31,7 @@ $EXPORT_TAGS{ all } = [@EXPORT_OK];
 our $DIE_ON_ERROR;
 our $PROMOTE_N32;
 
-our $VERSION = '0.09';
+our $VERSION = '0.10';
 
 sub import {
     my $pkg = shift;

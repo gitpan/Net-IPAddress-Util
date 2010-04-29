@@ -1,5 +1,8 @@
 Revision history for Net-IPAddress-Util
 
+0.10    2010-04-28
+        Fewer internal dependencies means fewer chances to use the wrong lib.
+
 0.09    2010-03-27
         Try to be even more bullet-proof wrt the N32 bugs.
 

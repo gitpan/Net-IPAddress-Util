@@ -4,9 +4,9 @@ use strict;
 
 use Carp qw( cluck );
 use Class::Std;
-use Net::IPAddress::Util try => 'GMP,Pari', ':all';
+use Net::IPAddress::Util qw( :constr :manip );
 use Net::IPAddress::Util::Collection;
-use Math::BigInt try => 'GMP,Pari';
+use Math::BigInt;
 
 {
     my %lower :ATTR( :name<lower> :default<0> );
