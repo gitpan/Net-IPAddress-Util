@@ -31,7 +31,9 @@ $EXPORT_TAGS{ all } = [@EXPORT_OK];
 our $DIE_ON_ERROR;
 our $PROMOTE_N32;
 
-our $VERSION = '0.10';
+our $VERSION = '0.11';
+
+use vars qw(@ISA);
 
 sub import {
     my $pkg = shift;
@@ -44,6 +46,8 @@ sub import {
         if (grep {$_ eq $arg} @bigint_keys) {
             my $value = shift @args;
             push @bigint_args, ($arg => $value);
+            eval "use Math::BigInt::$value";
+            push @ISA, "Math::BigInt::$value" unless $@;
         }
         elsif (grep {$_ eq $arg} @bigint_tags) {
             push @bigint_args, $arg;
