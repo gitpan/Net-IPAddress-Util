@@ -1,5 +1,11 @@
 Revision history for Net-IPAddress-Util
 
+0.12    2011-03-26
+        Fix completely idiotic thinko in handling backend specification.
+
+0.11    2011-03-26
+        Try to solve weird issue with certain binary versions of GMP and Pari.
+
 0.10    2010-04-28
         Fewer internal dependencies means fewer chances to use the wrong lib.
 
