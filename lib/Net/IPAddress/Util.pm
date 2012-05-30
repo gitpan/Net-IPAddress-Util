@@ -1,14 +1,26 @@
 package Net::IPAddress::Util;
 
+use 5.010;
 use strict;
-
-use base qw(Math::BigInt);
+use base qw( Exporter );
 
 use Carp qw(carp cluck confess);
-use Exporter;
+use Data::Dumper;
 use Regexp::IPv6 qw($IPv6_re);
 
-use overload '""' => \&str;
+use overload
+    '""' => 'str',
+    '0+' => 'num',
+    '=' => 'IP',
+    '<=>' => 'spaceship',
+    'cmp' => 'spaceship',
+    '+' => '_do_add',
+    '-' => '_do_subtract',
+    '<<' => '_shift_left',
+    '>>' => '_shift_right',
+    '&' => '_band',
+    '|' => '_bor',
+    ;
 
 our %EXPORT_TAGS = (
     constr => [qw( IP n32_to_ipv4 )],
@@ -31,55 +43,58 @@ $EXPORT_TAGS{ all } = [@EXPORT_OK];
 our $DIE_ON_ERROR;
 our $PROMOTE_N32;
 
-our $VERSION = '0.12';
+our $VERSION = '1.000';
 
 use vars qw(@ISA);
 
-sub import {
-    my $pkg = shift;
-    my @args = @_;
-    my @bigint_keys = qw( lib try only );
-    my @bigint_tags = qw( :constants );
-    my @bigint_args;
-    my @export_args;
-    while (my $arg = shift @args) {
-        if (grep {$_ eq $arg} @bigint_keys) {
-            my $value = shift @args;
-            push @bigint_args, ($arg => $value);
-            for my $backend (split /\s*,\s*/, $value) {
-	        eval "use Math::BigInt::$backend";
-                push @ISA, "Math::BigInt::$backend" unless $@;
-            }
-        }
-        elsif (grep {$_ eq $arg} @bigint_tags) {
-            push @bigint_args, $arg;
-        }
-        else {
-            push @export_args, $arg;
-        }
-    }
-    Math::BigInt::import($pkg, @bigint_args);
-    Exporter::import($pkg, @export_args);
-    Exporter::export_to_level($pkg, 1, $pkg, @export_args);
-    return 1;
-}
-
 {
 
-    my $IPV4_LO = Math::BigInt->from_hex('0xffff00000000');
-    my $IPV4_HI = Math::BigInt->from_hex('0xffffffffffff');
+    my $IPV4_LO;
+    my $IPV4_HI;
+
+    sub import {
+        my $pkg = shift;
+        my @args = @_;
+        my @bigint_keys = qw( lib try only );
+        my @bigint_tags = qw( :constants );
+        my @bigint_args;
+        my @export_args;
+        while (my $arg = shift @args) {
+            if (grep {$_ eq $arg} @bigint_keys) {
+                my $value = shift @args;
+                push @bigint_args, ($arg => $value);
+            }
+            elsif (grep {$_ eq $arg} @bigint_tags) {
+                push @bigint_args, $arg;
+            }
+            else {
+                push @export_args, $arg;
+            }
+        }
+        eval ('use Math::BigInt qw(' . join(' ', @bigint_args) . ')');
+        $IPV4_LO = Math::BigInt->from_hex('0xffff00000000');
+        $IPV4_HI = Math::BigInt->from_hex('0xffffffffffff');
+        Exporter::import($pkg, @export_args);
+        Exporter::export_to_level($pkg, 1, $pkg, @export_args);
+        return 1;
+    }
 
     sub is_ipv4 {
-        my $self = shift;
+        my $self = shift()->[ 0 ];
         return ($self >= $IPV4_LO && $self <= $IPV4_HI);
     }
 
     sub n32_to_ipv4 {
         my $self = shift;
-        $self = __PACKAGE__->new($self) unless ref $self;
+        if (ref $self and $self->isa(__PACKAGE__)) {
+            $self->[ 0 ] |= $IPV4_LO;
+            $self->[ 0 ] &= $IPV4_HI;
+            return $self;
+        }
+        $self = Math::BigInt->new($self);
         $self |= $IPV4_LO;
         $self &= $IPV4_HI;
-        return bless $self => __PACKAGE__;
+        return bless [ $self ] => __PACKAGE__;
     }
 
 }
@@ -87,6 +102,9 @@ sub import {
 sub IP { __PACKAGE__->new(@_) }
 
 sub new {
+
+    # carp(Dumper \@_);
+
     my $class   = shift;
     my $address = shift;
 
@@ -94,14 +112,16 @@ sub new {
 
     return ERROR('Address must be not be less than zero') if $address =~ /^-/;
 
-    if ($address =~ /^[0-9a-f]{32}$/) {
+    if (ref $address and $address->isa(__PACKAGE__)) {
+        return $address;
+    }
+    elsif ($address =~ /^[0-9a-f]{32}$/) {
         # new() from result of ->normal_form()
-        $address = '0x' . $address;
         $num = Math::BigInt->from_hex($address);
     }
-    elsif ($address =~ /(\d+)\.(\d+)\.(\d+)\.(\d+)$/) {
+    elsif ($address =~ /^(?:::ffff:)?(\d+)\.(\d+)\.(\d+)\.(\d+)$/) {
         # new() from dotted-quad IPv4 address
-        my $hex = '0xffff'.sprintf('%02x%02x%02x%02x', $1, $2, $3, $4);
+        my $hex = 'ffff'.sprintf('%02x%02x%02x%02x', $1, $2, $3, $4);
         $num = Math::BigInt->from_hex($hex);
     }
     elsif ($address =~ /^($IPv6_re)(?:\%.*)?$/ms) {
@@ -128,13 +148,13 @@ sub new {
         }
     }
 
-    return bless $num => $class;
+    return bless [ $num ] => $class;
 }
 
 sub ipv4 {
     my $self = shift;
     return ERROR('Not an IPv4 adddress') unless $self->is_ipv4();
-    my $num = Math::BigInt->new($self);
+    my $num = Math::BigInt->new($self->[ 0 ]);
     $num &= hex('0xffffffff');
     return join '.', unpack 'C4', pack 'N32', $num->numify();
 }
@@ -142,14 +162,14 @@ sub ipv4 {
 sub as_n32 {
     my $self = shift;
     return ERROR('Not an IPv4 adddress') unless $self->is_ipv4();
-    my $num = Math::BigInt->new($self);
+    my $num = Math::BigInt->new($self->[ 0 ]);
     $num &= hex('0xffffffff');
     return unpack 'N32', pack 'N32', $num->numify();
 }
 
 sub normal_form {
     my $self = shift;
-    my $hex = $self->as_hex();
+    my $hex = $self->[ 0 ]->as_hex();
     $hex =~ s/^0x//;
     $hex = substr(('0' x 32) . $hex, -32);
     return lc $hex;
@@ -187,6 +207,107 @@ sub str {
     return $self->ipv6();
 }
 
+sub num {
+    my $self = shift;
+    return Math::BigInt->new($self->[ 0 ]->numify());
+}
+
+sub spaceship {
+    my ($lhs, $rhs, $swapped) = @_;
+    ($lhs, $rhs) = ($rhs, $lhs) if $swapped;
+    $lhs = $lhs->[ 0 ] if eval { $lhs->isa(__PACKAGE__) };
+    $rhs = $rhs->[ 0 ] if eval { $rhs->isa(__PACKAGE__) };
+    return
+        $lhs < $rhs ? -1
+        : $lhs > $rhs ? 1
+        : 0
+        ;
+}
+
+sub _do_add {
+    my ($lhs, $rhs, $swapped) = @_;
+    ($lhs, $rhs) = ($rhs, $lhs) if $swapped;
+    $lhs = $lhs->[ 0 ] if eval { $lhs->isa(__PACKAGE__) };
+    $rhs = $rhs->[ 0 ] if eval { $rhs->isa(__PACKAGE__) };
+    return IP($lhs + $rhs);
+}
+
+sub _do_subtract {
+    my ($lhs, $rhs, $swapped) = @_;
+    ($lhs, $rhs) = ($rhs, $lhs) if $swapped;
+    $lhs = $lhs->[ 0 ] if eval { $lhs->isa(__PACKAGE__) };
+    $rhs = $rhs->[ 0 ] if eval { $rhs->isa(__PACKAGE__) };
+    return IP($lhs - $rhs);
+}
+
+sub _shift_left {
+    my ($lhs, $rhs, $swapped) = @_;
+    ($lhs, $rhs) = ($rhs, $lhs) if $swapped;
+    my $pow = 128;
+    my $mask = 0;
+    if ($lhs->is_ipv4) {
+        $pow = 32;
+        $mask = Math::BigInt->from_hex('ffff00000000');
+    }
+    $lhs = $lhs->[ 0 ] if eval { $lhs->isa(__PACKAGE__) };
+    $rhs = $rhs->[ 0 ] if eval { $rhs->isa(__PACKAGE__) };
+    my $num = int($lhs << $rhs);
+    $num &= ((Math::BigInt->new(2) ** $pow) - 1);
+    $num |= $mask;
+    return IP($num);
+}
+
+sub _shift_right {
+    my ($lhs, $rhs, $swapped) = @_;
+    ($lhs, $rhs) = ($rhs, $lhs) if $swapped;
+    my $pow = 128;
+    my $mask = 0;
+    if ($lhs->is_ipv4) {
+        $pow = 32;
+        $mask = Math::BigInt->from_hex('ffff00000000');
+    }
+    $lhs = $lhs->[ 0 ] if eval { $lhs->isa(__PACKAGE__) };
+    $rhs = $rhs->[ 0 ] if eval { $rhs->isa(__PACKAGE__) };
+    my $num = int($lhs >> $rhs);
+    $num &= ((Math::BigInt->new(2) ** $pow) - 1);
+    $num |= $mask;
+    return IP($num);
+}
+
+sub _band {
+    my ($lhs, $rhs, $swapped) = @_;
+    ($lhs, $rhs) = ($rhs, $lhs) if $swapped;
+    my $pow = 128;
+    my $mask = 0;
+    if ($lhs->is_ipv4) {
+        $pow = 32;
+        $mask = Math::BigInt->from_hex('ffff00000000');
+    }
+    $lhs = $lhs->[ 0 ] if eval { $lhs->isa(__PACKAGE__) };
+    $rhs = $rhs->[ 0 ] if eval { $rhs->isa(__PACKAGE__) };
+    my $num = int($lhs & $rhs);
+    $num &= ((Math::BigInt->new(2) ** $pow) - 1);
+    $num |= $mask;
+    return IP($num);
+}
+
+sub _bor {
+    my ($lhs, $rhs, $swapped) = @_;
+    ($lhs, $rhs) = ($rhs, $lhs) if $swapped;
+    my $pow = 128;
+    my $mask = 0;
+    if ($lhs->is_ipv4) {
+        $pow = 32;
+        $mask = Math::BigInt->from_hex('ffff00000000');
+    }
+    $lhs = $lhs->[ 0 ] if eval { $lhs->isa(__PACKAGE__) };
+    $rhs = $rhs->[ 0 ] if eval { $rhs->isa(__PACKAGE__) };
+    my $num = int($lhs | $rhs);
+    $num &= ((Math::BigInt->new(2) ** $pow) - 1);
+    $num |= $mask;
+    return IP($num);
+}
+
 sub ERROR {
     my $msg = @_ ? shift() : 'An error has occured';
     if ($DIE_ON_ERROR) {
@@ -200,7 +321,7 @@ sub ERROR {
 
 sub explode_ip {
     my $self = shift;
-    my $str = $self->as_bin();
+    my $str = $self->[ 0 ]->as_bin();
     $str =~ s/^0b//;
     $str = substr('0' x 128 . $str, -128);
     return split '', $str;
@@ -208,7 +329,8 @@ sub explode_ip {
 
 sub implode_ip {
     my @array = @_;
-    my $self = __PACKAGE__->new(__PACKAGE__->from_bin('0b'. join '', @array));
+    my $str = join '', @array;
+    my $self = __PACKAGE__->new(Math::BigInt->from_bin($str));
     return $self;
 }
 
@@ -260,6 +382,7 @@ sub radix_sort {
     # somewhere between 750 and 1000 elements, and for IPv6 it's very much
     # more than that, to the point where the system starts paging.
     # TODO fork() into one bucket per CPU, and mergesort the result?
+    # TODO Inline::C ?
     my %index = map { $_->normal_form() => $_ } @_;
     my $from = [keys %index];
     my $to;
@@ -313,6 +436,10 @@ sub fqdn {
     return split /\./, $dn, 2;
 }
 
+sub config {
+    return Math::BigInt->config;
+}
+
 1;
 
 __END__
@@ -323,7 +450,7 @@ Net::IPAddress::Util - Version-agnostic representation of an IP address
 
 =head1 VERSION
 
-Version 0.09
+Version 0.12
 
 =head1 SYNOPSIS
 

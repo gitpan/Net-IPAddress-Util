@@ -15,8 +15,8 @@ use Math::BigInt;
     sub BUILD {
         my ($self, $this, $arg_ref) = @_;
         if ($arg_ref->{ lower } && $arg_ref->{ upper }) {
-            $lower{ $this } = IP($arg_ref->{ lower });
-            $upper{ $this } = IP($arg_ref->{ upper });
+            $lower{ $this } = Net::IPAddress::Util->new($arg_ref->{ lower });
+            $upper{ $this } = Net::IPAddress::Util->new($arg_ref->{ upper });
             if ($lower{ $this } > $upper{ $this }) {
                 ($lower{ $this }, $upper{ $this }) = ($upper{ $this }, $lower{ $this });
             }
@@ -28,12 +28,12 @@ use Math::BigInt;
             if ($arg_ref->{ netmask }) {
                 $ip = IP($arg_ref->{ ip      });
                 $nm = IP($arg_ref->{ netmask });
-                $ip->band($nm);
+                $ip = $ip & $nm;
                 if ($ip->is_ipv4()) {
-                    $nm->bxor(Math::BigInt->from_hex('0xffffffff'));
+                    $nm->[ 0 ]->bxor(Math::BigInt->from_hex('ffffffff'));
                 }
                 else {
-                    $nm->bxor(Math::BigInt->from_hex('0x' . 'f' x 32));
+                    $nm->[ 0 ]->bxor(Math::BigInt->from_hex('f' x 32));
                 }
             }
             elsif ($arg_ref->{ ip } =~ m{(.*?)/(\d+)}) {
@@ -122,7 +122,7 @@ sub tight {
     my $hr    = $self->outer_bounds();
     my $rv    = Net::IPAddress::Util::Collection->new();
     if ($hr->{ highest } > $upper or $hr->{ base } < $lower) {
-        my $mid = int(($hr->{ base } + $hr->{ highest}) / 2);
+        my $mid = int(int($hr->{ base } + $hr->{ highest}) / 2);
         my $lo = __PACKAGE__->new({ lower => $lower,   upper => $mid   });
         my $hi = __PACKAGE__->new({ lower => $mid + 1, upper => $upper });
         push @$rv, @{$lo->tight()};

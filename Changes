@@ -1,5 +1,9 @@
 Revision history for Net-IPAddress-Util
 
+1.000   2012-05-24
+        Move from ISA BigInt to HASA BigInt to try to solve the GMP / Pari
+        stuff once and for all.
+
 0.12    2011-03-26
         Fix completely idiotic thinko in handling backend specification.
 

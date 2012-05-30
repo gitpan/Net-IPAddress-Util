@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               Net-IPAddress-Util
-version:            0.12
+version:            1.000
 abstract:           Version-agnostic representation of an IP address
 author:
     - Paul Bennett <paul.w.bennett@gmail.com>
@@ -19,7 +19,7 @@ no_index:
     directory:
         - t
         - inc
-generated_by:       ExtUtils::MakeMaker version 6.56
+generated_by:       ExtUtils::MakeMaker version 6.57_05
 meta-spec:
     url:      http://module-build.sourceforge.net/META-spec-v1.4.html
     version:  1.4
