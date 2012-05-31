@@ -43,7 +43,7 @@ $EXPORT_TAGS{ all } = [@EXPORT_OK];
 our $DIE_ON_ERROR;
 our $PROMOTE_N32;
 
-our $VERSION = '1.000';
+our $VERSION = '1.001';
 
 use vars qw(@ISA);
 
@@ -450,7 +450,7 @@ Net::IPAddress::Util - Version-agnostic representation of an IP address
 
 =head1 VERSION
 
-Version 0.12
+Version 1.001
 
 =head1 SYNOPSIS
 

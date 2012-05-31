@@ -1,5 +1,10 @@
 Revision history for Net-IPAddress-Util
 
+1.001   2012-05-31
+        Try advancing some of the deps to see if that cures the spurious
+        test fails on what look like random architectures. This is unrelated
+        to the previous GMP / Pari stuff, and might be BigInt version related.
+
 1.000   2012-05-24
         Move from ISA BigInt to HASA BigInt to try to solve the GMP / Pari
         stuff once and for all.

@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               Net-IPAddress-Util
-version:            1.000
+version:            1.001
 abstract:           Version-agnostic representation of an IP address
 author:
     - Paul Bennett <paul.w.bennett@gmail.com>
@@ -11,9 +11,9 @@ configure_requires:
 build_requires:
     ExtUtils::MakeMaker:  0
 requires:
-    Class::Std:    0
-    Math::BigInt:  1.89
-    Regexp::IPv6:  0
+    Class::Std:    0.011
+    Math::BigInt:  1.997
+    Regexp::IPv6:  0.03
     Test::More:    0
 no_index:
     directory:
