@@ -17,6 +17,7 @@ WriteMakefile(
         'Regexp::IPv6' => '0.03',
         'Math::BigInt' => '1.997',
     },
+    MIN_PERL_VERSION => '5.010000',
     dist                => { COMPRESS => 'gzip -9f', SUFFIX => 'gz', },
     clean               => { FILES => 'Net-IPAddress-Util-*' },
 );

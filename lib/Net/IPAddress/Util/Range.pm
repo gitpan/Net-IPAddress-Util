@@ -1,5 +1,6 @@
 package Net::IPAddress::Util::Range;
 
+use 5.010;
 use strict;
 
 use Carp qw( cluck );

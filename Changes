@@ -1,5 +1,9 @@
 Revision history for Net-IPAddress-Util
 
+1.002   2012-06-09
+        Make it explicit that 5.010 is required. Start trying to make the
+        time trials smarter.
+
 1.001   2012-05-31
         Try advancing some of the deps to see if that cures the spurious
         test fails on what look like random architectures. This is unrelated

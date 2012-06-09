@@ -1,5 +1,6 @@
 package Net::IPAddress::Util::Collection;
 
+use 5.010;
 use strict;
 
 use Net::IPAddress::Util::Collection::Tie;
