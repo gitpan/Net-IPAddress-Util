@@ -41,6 +41,6 @@
          }
       }
    },
-   "release_status" : "stable",
-   "version" : "2.000"
+   "release_status" : "testing",
+   "version" : "2.000_TRIAL"
 }

@@ -24,4 +24,4 @@ requires:
   Test::More: 0
   mop: 0
   perl: 5.018000
-version: 2.000
+version: 2.000_TRIAL
