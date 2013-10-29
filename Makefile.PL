@@ -12,12 +12,13 @@ WriteMakefile(
       : ()),
     PL_FILES            => {},
     PREREQ_PM => {
+        'Carp' => '0',
+        'Exporter' => '0',
         'Test::More'   => '0',
-        'Class::Std'   => '0.011',
-        'Regexp::IPv6' => '0.03',
-        'Math::BigInt' => '1.997',
+        'List::MoreUtils' => '0',
+        'mop' => '0',
     },
-    MIN_PERL_VERSION => '5.010000',
+    MIN_PERL_VERSION => '5.018000',
     dist                => { COMPRESS => 'gzip -9f', SUFFIX => 'gz', },
     clean               => { FILES => 'Net-IPAddress-Util-*' },
 );

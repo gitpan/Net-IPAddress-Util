@@ -1,11 +1,10 @@
 package Net::IPAddress::Util::Collection::Tie;
 
-use 5.010;
-use strict;
+use 5.016;
 
 use Carp qw( confess );
 use Class::Std;
-use Net::IPAddress::Util::Range;
+require Net::IPAddress::Util::Range;
 
 my %contents :ATTR( :name<contents> :default<[]> );
 
@@ -79,13 +78,13 @@ sub _checktype {
     my ($v) = @_;
     return $v if ref $v eq 'Net::IPAddress::Util::Range';
     if (ref $v eq 'HASH') {
-        $v = Net::IPAddress::Util::Range->new($v);
+        $v = Net::IPAddress::Util::Range::IPRange($v);
     }
     if (ref $v eq 'Net::IPAddress::Util') {
-        $v = Net::IPAddress::Util::Range->new({ ip => $v });
+        $v = Net::IPAddress::Util::Range::IPRange({ ip => $v });
     }
     if (!defined $v or ref $v ne 'Net::IPAddress::Util::Range') {
-        my $disp = defined $v ? ref $v ? ref $v : 'scalar' : 'undef()';
+        my $disp = defined $v ? ref $v ? ref $v : 'bare scalar' : 'undef()';
         confess("Invalid data type ($disp)");
     }
     return $v;

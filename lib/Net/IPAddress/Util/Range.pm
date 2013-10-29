@@ -1,139 +1,154 @@
 package Net::IPAddress::Util::Range;
 
-use 5.010;
-use strict;
+use 5.016;
+use mop;
 
-use Carp qw( cluck );
-use Class::Std;
+use Exporter qw( import );
 use Net::IPAddress::Util qw( :constr :manip );
-use Net::IPAddress::Util::Collection;
-use Math::BigInt;
+require Net::IPAddress::Util::Collection;
 
-{
-    my %lower :ATTR( :name<lower> :default<0> );
-    my %upper :ATTR( :name<upper> :default<0> );
+class Net::IPAddress::Util::Range {
 
-    sub BUILD {
-        my ($self, $this, $arg_ref) = @_;
+    has $!lower is ro;
+    has $!upper is ro;
+
+    method new ($arg_ref) {
+        my ($l, $u);
         if ($arg_ref->{ lower } && $arg_ref->{ upper }) {
-            $lower{ $this } = Net::IPAddress::Util->new($arg_ref->{ lower });
-            $upper{ $this } = Net::IPAddress::Util->new($arg_ref->{ upper });
-            if ($lower{ $this } > $upper{ $this }) {
-                ($lower{ $this }, $upper{ $this }) = ($upper{ $this }, $lower{ $this });
+            if ($arg_ref->{ lower } > $arg_ref->{ upper }) {
+                ($arg_ref->{ lower }, $arg_ref->{ upper }) = ($arg_ref->{ upper }, $arg_ref->{ lower });
             }
-            return $self;
+            return $self->next::method(%$arg_ref);
         }
         elsif ($arg_ref->{ ip }) {
             my $ip;
-            my $nm;
+            my $nm = 2;
             if ($arg_ref->{ netmask }) {
                 $ip = IP($arg_ref->{ ip      });
+                my $was_ipv4 = $ip->is_ipv4;
                 $nm = IP($arg_ref->{ netmask });
-                $ip = $ip & $nm;
-                if ($ip->is_ipv4()) {
-                    $nm->[ 0 ]->bxor(Math::BigInt->from_hex('ffffffff'));
+                $ip &= $nm;
+                $nm = ~$nm;
+                if ($was_ipv4) {
+                    $nm &= ipv4_mask();
                 }
-                else {
-                    $nm->[ 0 ]->bxor(Math::BigInt->from_hex('f' x 32));
-                }
+                $l = $ip;
+                $u = $ip | $nm;
             }
             elsif ($arg_ref->{ ip } =~ m{(.*?)/(\d+)}) {
                 my ($t, $cidr) = ($1, $2);
                 $ip = IP($t);
-                $cidr = $ip->is_ipv4() ? (32 - $cidr) : (128 - $cidr);
-                $nm = Math::BigInt->new(2);
-                $nm **= $cidr;
-                $nm -= 1;
+                my $was_ipv4 = $ip->is_ipv4;
+                $nm = implode_ip(substr(('1' x 128) . ('0' x (($was_ipv4 ? 32 : 128) - $cidr)), -128));
+                $ip &= $nm;
+                if ($was_ipv4) {
+                    my $fixup = ipv4_flag();
+                    $ip |= $fixup;
+                }
+                $l = $ip;
+                $u = $ip | ~$nm;
             }
             elsif ($arg_ref->{ cidr }) {
                 $ip = IP($arg_ref->{ ip });
-                my $cidr = $ip->is_ipv4() ? (32 - $arg_ref->{ cidr }) : (128 - $arg_ref->{ cidr });
-                $nm = Math::BigInt->new(2);
-                $nm **= $cidr;
-                $nm -= 1;
+                my $was_ipv4 = $ip->is_ipv4;
+                my $cidr = $arg_ref->{ cidr };
+                $nm = implode_ip(substr(('1' x 128) . ('0' x (($was_ipv4 ? 32 : 128) - $cidr)), -128));
+                $ip &= $nm;
+                if ($was_ipv4) {
+                    my $fixup = ipv4_flag();
+                    $ip |= $fixup;
+                }
+                $l = $ip;
+                $u = $ip | ~$nm;
             }
             else {
-                $lower{ $this } = IP($arg_ref->{ ip });
-                $upper{ $this } = IP($arg_ref->{ ip });
-                return $self;
+                $l = IP($arg_ref->{ ip });
+                $u = IP($arg_ref->{ ip });
             }
-            if ($ip->is_ipv4()) {
-                $nm |= Math::BigInt->from_hex('0xffff00000000');
-            }
-            $lower{ $this } = IP($ip);
-            $upper{ $this } = IP($ip | $nm);
-            return $self;
         }
+        return $self->next::method(lower => $l, upper => $u);
     }
 
-}
-
-sub as_string :STRINGIFY {
-    my $self = shift;
-    my $lower = $self->get_lower();
-    my $upper = $self->get_upper();
-    return "($lower .. $upper)";
-}
-
-sub as_cidr {
-    my $self = shift;
-    my $hr = $self->outer_bounds();
-    return "$hr->{ base }" . '/' . "$hr->{ cidr }";
-}
-
-sub as_netmask {
-    my $self = shift;
-    my $hr = $self->outer_bounds();
-    return "$hr->{ base }" . ' (' . "$hr->{ netmask }" . ')';
-}
-
-sub outer_bounds {
-    my $self = shift;
-    my $lower = $self->get_lower();
-    my $upper = $self->get_upper();
-    my @l = explode_ip($lower);
-    my @u = explode_ip($upper);
-    my @cidr = common_prefix(@l, @u);
-    my $cidr = scalar @cidr;
-    my @mask = prefix_mask(@l, @u);
-    my $base = implode_ip(ip_pad_prefix(@cidr));
-    my $nm   = implode_ip(ip_pad_prefix(@mask));
-    my $x = Math::BigInt->new(2);
-    $x **= (128 - $cidr);
-    $x -= 1;
-    my $hi = $base | $x;
-    if ($lower->is_ipv4()) {
-        $base = n32_to_ipv4( $base );
-        $nm   = n32_to_ipv4( $nm   );
-        $hi   = n32_to_ipv4( $hi   );
-        $cidr -= 96;
+    method as_string is overload('""') {
+        return "($!lower .. $!upper)";
     }
-    return {
-        base    => $base,
-        cidr    => $cidr,
-        netmask => $nm,
-        highest => $hi,
-    };
-}
 
-sub tight {
-    my $self  = shift;
-    my $lower = $self->get_lower();
-    my $upper = $self->get_upper();
-    my $hr    = $self->outer_bounds();
-    my $rv    = Net::IPAddress::Util::Collection->new();
-    if ($hr->{ highest } > $upper or $hr->{ base } < $lower) {
-        my $mid = int(int($hr->{ base } + $hr->{ highest}) / 2);
-        my $lo = __PACKAGE__->new({ lower => $lower,   upper => $mid   });
-        my $hi = __PACKAGE__->new({ lower => $mid + 1, upper => $upper });
-        push @$rv, @{$lo->tight()};
-        push @$rv, @{$hi->tight()};
+    method outer_bounds {
+        # say STDERR "ob`$self'";
+        my @l = explode_ip($!lower);
+        my @u = explode_ip($!upper);
+        my @cidr = common_prefix(@l, @u);
+        my $cidr = scalar @cidr;
+        my $base = implode_ip(ip_pad_prefix(@cidr));
+        if ($base->is_ipv4()) {
+            $cidr -= 96;
+        }
+        my @mask = prefix_mask(@l, @u);
+        my $nm = implode_ip(ip_pad_prefix(@mask));
+        my $x = ~$nm;
+        my $hi = $base->clone;
+        $hi |= $x;
+        if ($base->is_ipv4()) {
+            $nm &= ipv4_mask();
+        }
+        return {
+            base    => $base,
+            cidr    => $cidr,
+            netmask => $nm,
+            highest => $hi,
+        };
     }
-    else {
-        push @$rv, $self;
+
+    method inner_bounds {
+        # warn "ib`$self'";
+        return $self if $!upper == $!lower;
+        my $bounds = $self->outer_bounds();
+        my $new = $self->clone;
+        while ($bounds->{ highest } > $!upper or $bounds->{ base } < $!lower) {
+            $new = ref($self)->new({ ip => $!lower, cidr => $bounds->{ cidr } + 1 });
+            $bounds = $new->outer_bounds();
+        }
+        return $new;
     }
-    return $rv;
-}
+
+    method as_cidr {
+        my $hr = $self->outer_bounds();
+        return "$hr->{ base }" . '/' . "$hr->{ cidr }";
+    }
+
+    method as_netmask {
+        my $hr = $self->outer_bounds();
+        return "$hr->{ base }" . ' (' . "$hr->{ netmask }" . ')';
+    }
+
+    method loose {
+        my $hr = $self->outer_bounds();
+        return ref($self)->new({ lower => $hr->{ base }, upper => $hr->{ highest } });
+    }
+
+    method spaceship is overload('<=>') {
+        my ($rhs, $swapped) = @_;
+        ($self, $rhs) = ($rhs, $self) if $swapped;
+        $rhs = ref($self)->new({ ip => $rhs }) unless ref($self) eq ref($rhs);
+        return
+            $self->lower <=> $rhs->lower
+            || $self->upper <=> $rhs->upper
+            ;
+    }
+
+    method tight {
+        # warn "t`$self'";
+        my $inner = $self->inner_bounds();
+        my $rv = Net::IPAddress::Util::Collection->new();
+        push @$rv, $inner;
+        if ($inner->upper < $!upper) {
+            my $remainder = ref($self)->new({ lower => $inner->upper + 1, upper => $!upper });
+            push @$rv, @{$remainder->tight()};
+        }
+        return $rv;
+    }
+
+};
 
 1;
 
@@ -211,15 +226,11 @@ Returns a collection of subnets that (between them) exactly match the
 addresses in this range. The returned object is an Net::IPAddress::Util::Collection,
 which can be treated as an array reference.
 
-=head2 get_lower
+=head2 lower
 
-=head2 set_lower
+=head2 upper
 
-=head2 get_upper
-
-=head2 set_upper
-
-Get or set the lower or upper bounds of this range.
+Get the lower or upper bounds of this range.
 
 =cut
 

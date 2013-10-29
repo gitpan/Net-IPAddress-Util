@@ -1,9 +1,10 @@
 package Net::IPAddress::Util::Collection;
 
-use 5.010;
-use strict;
+use 5.016;
 
-use Net::IPAddress::Util::Collection::Tie;
+require Net::IPAddress::Util;
+require Net::IPAddress::Util::Collection::Tie;
+require Net::IPAddress::Util::Range;
 
 our $RADIX_THRESHOLD;
 
@@ -17,81 +18,35 @@ sub new {
 
 sub sorted {
     my $self = shift;
-    if (defined $RADIX_THRESHOLD and $RADIX_THRESHOLD < scalar @$self) {
-        return $self->_radix_sort();
-    }
-    return $self->_native_sort();
-}
-
-sub _radix_sort {
-    my $self = shift;
-    my %lowdex;
-    map { push @{$lowdex{$_->get_lower()->normal_form()}}, $_ } grep { $_ } @$self;
-    my $lofrom = [keys %lowdex];
-    my $loto;
-    for (my $i = 30; $i >= 0; $i -= 2) {
-        $loto = [];
-        for my $card (@$lofrom) {
-            push @{$loto->[hex(substr $card, $i, 2)]}, $card;
+    # In theory, a raw radix sort is O(N), which beats Perl's O(N log N) by
+    # a fair margin. However, it _does_ discard duplicates, so ymmv.
+    my $from = [ map { [ unpack('C32', $_->lower->address . $_->upper->address) ] } @$self ];
+    my $to;
+    for (my $i = 31; $i >= 0; $i--) {
+        $to = [];
+        for my $card (@$from) {
+            push @{$to->[ $card->[ $i ] ]}, $card;
         }
-        $lofrom = [map { @{ $_ || [] } } @$loto];
+        $from = [ map { @{$_ // []} } @$to ];
     }
-    my @sorted;
-    for my $bucket (@$lofrom) {
-        my $bucket_size = scalar @{$lowdex{$bucket}};
-        if ($bucket_size == 1) {
-            push @sorted, $lowdex{$bucket}->[ 0 ];
-        }
-        elsif ($bucket_size > $RADIX_THRESHOLD) {
-            push @sorted, map {
-                $_->[ 1 ]
-            }
-            sort {
-                $a->[ 0 ] <=> $b->[ 0 ]
-            }
-            map { [ $_->get_upper()->normal_form(), $_ ] }
-            @{$lowdex{$bucket}};
-        }
-        else {
-            my %hidex = map { $_->get_upper()->normal_form() => $_ } @{$lowdex{$bucket}};
-            my $hifrom = [keys %hidex];
-            my $hito;
-            for (my $i = 30; $i >= 0; $i -= 2) {
-                $hito = [];
-                for my $card (@$hifrom) {
-                    push @{$hito->[hex(substr $card, $i, 2)]}, $card;
-                }
-                $hifrom = [map { @{ $_ || [] } } @$hito];
-            }
-            push @sorted, map { $hidex{$_} } @$hifrom;
-        }
-    }
-    return $self->new(@sorted);
-}
-
-sub _native_sort {
-    my $self = shift;
-    my @sorted = map {
-        $_->[2]
-    }
-    sort {
-        $a->[0] <=> $b->[0]
-        || $a->[1] <=> $b->[1]
-    }
-    map {
-        [ $_->get_lower(), $_->get_upper(), $_ ]
-    } grep { $_ } @$self;
-    return $self->new(@sorted);
+    my @rv = map {
+        my $n = $_;
+        my $l = Net::IPAddress::Util->new([@{$n}[0 .. 15]]);
+        my $r = Net::IPAddress::Util->new([@{$n}[16 .. 31]]);
+        my $x = Net::IPAddress::Util::Range->new({ lower => $l, upper => $r });
+        $x;
+    } @$from;
+    return @rv;
 }
 
 sub compacted {
     my $self = shift;
-    my @sorted = @{$self->sorted()};
+    my @sorted = $self->sorted();
     my @compacted;
     my $elem;
     while ($elem = shift @sorted) {
-        if (scalar @sorted and $elem->get_upper() >= $sorted[0]->get_lower() - 1) {
-            $elem->set_upper($sorted[0]->get_upper());
+        if (scalar @sorted and $elem->upper >= $sorted[0]->lower - 1) {
+            $elem = ref($elem)->new({ lower => $elem->lower, upper => $sorted[0]->upper });
             shift @sorted;
             redo;
         }
@@ -111,17 +66,17 @@ sub tight {
 
 sub as_cidrs {
     my $self = shift;
-    return map { $_->as_cidr() } @$self;
+    return map { $_->as_cidr() } grep { eval { $_->lower } } @$self;
 }
 
 sub as_netmasks {
     my $self = shift;
-    return map { $_->as_netmask() } @$self;
+    return map { $_->as_netmask() } grep { eval { $_->lower } } @$self;
 }
 
 sub as_ranges {
     my $self = shift;
-    return map { $_->as_string() } @$self;
+    return map { $_->as_string() } grep { eval { $_->lower } } @$self;
 }
 
 1;

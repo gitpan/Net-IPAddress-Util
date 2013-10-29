@@ -1,30 +1,15 @@
 package Net::IPAddress::Util;
 
-use 5.010;
-use strict;
-use base qw( Exporter );
+use 5.016;
+use mop;
 
-use Carp qw(carp cluck confess);
-use Data::Dumper;
-use Regexp::IPv6 qw($IPv6_re);
-
-use overload
-    '""' => 'str',
-    '0+' => 'num',
-    '=' => 'IP',
-    '<=>' => 'spaceship',
-    'cmp' => 'spaceship',
-    '+' => '_do_add',
-    '-' => '_do_subtract',
-    '<<' => '_shift_left',
-    '>>' => '_shift_right',
-    '&' => '_band',
-    '|' => '_bor',
-    ;
+use Carp qw( carp cluck confess );
+use Exporter qw( import );
+use List::MoreUtils qw( pairwise );
 
 our %EXPORT_TAGS = (
     constr => [qw( IP n32_to_ipv4 )],
-    manip  => [qw( explode_ip implode_ip ip_pad_prefix common_prefix prefix_mask )],
+    manip  => [qw( explode_ip implode_ip ip_pad_prefix common_prefix prefix_mask ipv4_mask ipv4_flag )],
     sort   => [qw( radix_sort )],
     compat => [qw( ip2num num2ip validaddr mask fqdn )]
 );
@@ -40,298 +25,292 @@ our @EXPORT_OK = keys %EXPORT_OK;
 
 $EXPORT_TAGS{ all } = [@EXPORT_OK];
 
-our $DIE_ON_ERROR;
-our $PROMOTE_N32;
+our $DIE_ON_ERROR = 0;
+our $PROMOTE_N32 = 1;
 
-our $VERSION = '1.002';
+our $VERSION = '2.000';
 
-use vars qw(@ISA);
+sub IP {
+    return Net::IPAddress::Util->new($_[0]);
+}
 
-{
+class Net::IPAddress::Util {
 
-    my $IPV4_LO;
-    my $IPV4_HI;
+    has $!address is ro;
 
-    sub import {
-        my $pkg = shift;
-        my @args = @_;
-        my @bigint_keys = qw( lib try only );
-        my @bigint_tags = qw( :constants );
-        my @bigint_args;
-        my @export_args;
-        while (my $arg = shift @args) {
-            if (grep {$_ eq $arg} @bigint_keys) {
-                my $value = shift @args;
-                push @bigint_args, ($arg => $value);
-            }
-            elsif (grep {$_ eq $arg} @bigint_tags) {
-                push @bigint_args, $arg;
-            }
-            else {
-                push @export_args, $arg;
+    method new ($address) is overload('=') {
+        my $normal;
+        if (ref($address) eq 'ARRAY' && @$address == 16) {
+            $normal = $address;
+        }
+        elsif (ref($address) eq 'ARRAY' && @$address == 4) {
+            $normal = [ unpack 'C16', pack 'N4', @$address ];
+        }
+        elsif (ref $address and eval { $address->isa(__PACKAGE__) }) {
+            return $address->clone;
+        }
+        elsif ($address =~ /^(?:::ffff:)?(\d+)\.(\d+)\.(\d+)\.(\d+)$/) {
+            $normal = [
+                0, 0, 0, 0,
+                0, 0, 0, 0,
+                0, 0, 0xff, 0xff,
+                $1, $2, $3, $4
+            ];
+        }
+        elsif ($PROMOTE_N32 and $address =~ /^\d+$/ and $address >= 0 and $address <= (2 ** 32) - 1) {
+            $normal = [
+                0, 0, 0, 0,
+                0, 0, 0, 0,
+                0, 0, 0xff, 0xff,
+                unpack('C4', pack('N', $address))
+            ];
+        }
+        elsif ($address =~ /^([0-9a-f:]+)(?:\%.*)?$/msoi) {
+            # new() from IPv6 address, accepting and ignoring the Scope ID
+            $address = $1;
+            my ($upper, $lower) = split /::/, $address;
+            $lower = '' unless defined $lower;
+            my $hex = '0' x 32;
+            $upper =~ s/://g;
+            $lower =~ s/://g;
+            my $missing = 4 - (length($upper) % 4);
+            $missing = 0 if $missing == 4;
+            $upper = ('0' x $missing) . $upper;
+            substr($hex, 0,                length($upper)) = $upper;
+            substr($hex, - length($lower), length($lower)) = $lower;
+            my @hex = split //, $hex;
+            $normal = [];
+            while (@hex) {
+                push @$normal, hex(join('', splice(@hex, 0, 2)));
             }
         }
-        eval ('use Math::BigInt qw(' . join(' ', @bigint_args) . ')');
-        $IPV4_LO = Math::BigInt->from_hex('0xffff00000000');
-        $IPV4_HI = Math::BigInt->from_hex('0xffffffffffff');
-        Exporter::import($pkg, @export_args);
-        Exporter::export_to_level($pkg, 1, $pkg, @export_args);
-        return 1;
-    }
-
-    sub is_ipv4 {
-        my $self = shift()->[ 0 ];
-        return ($self >= $IPV4_LO && $self <= $IPV4_HI);
-    }
-
-    sub n32_to_ipv4 {
-        my $self = shift;
-        if (ref $self and $self->isa(__PACKAGE__)) {
-            $self->[ 0 ] |= $IPV4_LO;
-            $self->[ 0 ] &= $IPV4_HI;
-            return $self;
+        elsif (length($address) == 16) {
+            return $self->next::method(address => $address);
         }
-        $self = Math::BigInt->new($self);
-        $self |= $IPV4_LO;
-        $self &= $IPV4_HI;
-        return bless [ $self ] => __PACKAGE__;
-    }
-
-}
-
-sub IP { __PACKAGE__->new(@_) }
-
-sub new {
-
-    # carp(Dumper \@_);
-
-    my $class   = shift;
-    my $address = shift;
-
-    my $num;
-
-    return ERROR('Address must be not be less than zero') if $address =~ /^-/;
-
-    if (ref $address and $address->isa(__PACKAGE__)) {
-        return $address;
-    }
-    elsif ($address =~ /^[0-9a-f]{32}$/) {
-        # new() from result of ->normal_form()
-        $num = Math::BigInt->from_hex($address);
-    }
-    elsif ($address =~ /^(?:::ffff:)?(\d+)\.(\d+)\.(\d+)\.(\d+)$/) {
-        # new() from dotted-quad IPv4 address
-        my $hex = 'ffff'.sprintf('%02x%02x%02x%02x', $1, $2, $3, $4);
-        $num = Math::BigInt->from_hex($hex);
-    }
-    elsif ($address =~ /^($IPv6_re)(?:\%.*)?$/ms) {
-        # new() from IPv6 address, accepting and ignoring the Scope ID
-        $address = $1;
-        my ($upper, $lower) = split /::/, $address;
-        $lower = '' unless defined $lower;
-        my $hex = '0' x 32;
-        $upper =~ s/://g;
-        $lower =~ s/://g;
-        my $missing = 4 - (length($upper) % 4);
-        $missing = 0 if $missing == 4;
-        $upper = ('0' x $missing) . $upper;
-        substr($hex, 0,                length($upper)) = $upper;
-        substr($hex, - length($lower), length($lower)) = $lower;
-        $hex = '0x'. $hex;
-        $num = Math::BigInt->from_hex($hex);
-    }
-    else {
-        # new() from bare scalar. You're on your own here, good luck.
-        $num = Math::BigInt->new($address);
-        if ($PROMOTE_N32 and $num <= hex('0xffffffff')) {
-            return n32_to_ipv4($num);
+        else {
+            confess("I can't handle `$address', a(n) " . (ref($address) || 'bare scalar'));
         }
+        return $self->next::method(address => pack('C16', @$normal));
     }
 
-    return bless [ $num ] => $class;
-}
-
-sub ipv4 {
-    my $self = shift;
-    return ERROR('Not an IPv4 adddress') unless $self->is_ipv4();
-    my $num = Math::BigInt->new($self->[ 0 ]);
-    $num &= hex('0xffffffff');
-    return join '.', unpack 'C4', pack 'N32', $num->numify();
-}
-
-sub as_n32 {
-    my $self = shift;
-    return ERROR('Not an IPv4 adddress') unless $self->is_ipv4();
-    my $num = Math::BigInt->new($self->[ 0 ]);
-    $num &= hex('0xffffffff');
-    return unpack 'N32', pack 'N32', $num->numify();
-}
-
-sub normal_form {
-    my $self = shift;
-    my $hex = $self->[ 0 ]->as_hex();
-    $hex =~ s/^0x//;
-    $hex = substr(('0' x 32) . $hex, -32);
-    return lc $hex;
-}
-
-sub ipv6_expanded {
-    my $self = shift;
-    my $hex = $self->normal_form();
-    my $rv;
-    while ($hex =~ /(....)/g) {
-        $rv .= ':' if defined $rv;
-        $rv .= $1;
+    method is_ipv4 {
+        my @octets = unpack 'C16', $!address;
+        return $octets[ 10 ] == 0xff && $octets[ 11 ] == 0xff && (!grep { $_ } @octets[ 0 .. 9 ]);
     }
-    return $rv;
-}
 
-sub ipv6 {
-    my $self = shift;
-    if ($self->is_ipv4()) {
-        return '::ffff:'.$self->ipv4();
+    method ipv4 {
+        return join '.', unpack 'C4', substr($!address, -4);
     }
-    my $rv = $self->ipv6_expanded();
-    $rv =~ s/(0000:)+/:/;
-    $rv =~ s/^0+//;
-    $rv =~ s/::0+/::/;
-    $rv =~ s/^:/::/;
-    return $rv;
-}
 
-sub str {
-    my $self = shift;
-    if ($self->is_ipv4()) {
-        return $self->ipv4();
+    method as_n32 {
+        return unpack 'N', substr($!address, -4);
     }
-    return $self->ipv6();
-}
 
-sub num {
-    my $self = shift;
-    return Math::BigInt->new($self->[ 0 ]->numify());
-}
-
-sub spaceship {
-    my ($lhs, $rhs, $swapped) = @_;
-    ($lhs, $rhs) = ($rhs, $lhs) if $swapped;
-    $lhs = $lhs->[ 0 ] if eval { $lhs->isa(__PACKAGE__) };
-    $rhs = $rhs->[ 0 ] if eval { $rhs->isa(__PACKAGE__) };
-    return
-        $lhs < $rhs ? -1
-        : $lhs > $rhs ? 1
-        : 0
-        ;
-}
-
-sub _do_add {
-    my ($lhs, $rhs, $swapped) = @_;
-    ($lhs, $rhs) = ($rhs, $lhs) if $swapped;
-    $lhs = $lhs->[ 0 ] if eval { $lhs->isa(__PACKAGE__) };
-    $rhs = $rhs->[ 0 ] if eval { $rhs->isa(__PACKAGE__) };
-    return IP($lhs + $rhs);
-}
-
-sub _do_subtract {
-    my ($lhs, $rhs, $swapped) = @_;
-    ($lhs, $rhs) = ($rhs, $lhs) if $swapped;
-    $lhs = $lhs->[ 0 ] if eval { $lhs->isa(__PACKAGE__) };
-    $rhs = $rhs->[ 0 ] if eval { $rhs->isa(__PACKAGE__) };
-    return IP($lhs - $rhs);
-}
-
-sub _shift_left {
-    my ($lhs, $rhs, $swapped) = @_;
-    ($lhs, $rhs) = ($rhs, $lhs) if $swapped;
-    my $pow = 128;
-    my $mask = 0;
-    if ($lhs->is_ipv4) {
-        $pow = 32;
-        $mask = Math::BigInt->from_hex('ffff00000000');
+    method normal_form {
+        my $hex = join('', map { sprintf('%02x', $_) } unpack('C16', $!address));
+        $hex = substr(('0' x 32) . $hex, -32);
+        return lc $hex;
     }
-    $lhs = $lhs->[ 0 ] if eval { $lhs->isa(__PACKAGE__) };
-    $rhs = $rhs->[ 0 ] if eval { $rhs->isa(__PACKAGE__) };
-    my $num = int($lhs << $rhs);
-    $num &= ((Math::BigInt->new(2) ** $pow) - 1);
-    $num |= $mask;
-    return IP($num);
-}
 
-sub _shift_right {
-    my ($lhs, $rhs, $swapped) = @_;
-    ($lhs, $rhs) = ($rhs, $lhs) if $swapped;
-    my $pow = 128;
-    my $mask = 0;
-    if ($lhs->is_ipv4) {
-        $pow = 32;
-        $mask = Math::BigInt->from_hex('ffff00000000');
+    method ipv6_expanded {
+        my $hex = $self->normal_form();
+        my $rv;
+        while ($hex =~ /(....)/g) {
+            $rv .= ':' if defined $rv;
+            $rv .= $1;
+        }
+        return $rv;
     }
-    $lhs = $lhs->[ 0 ] if eval { $lhs->isa(__PACKAGE__) };
-    $rhs = $rhs->[ 0 ] if eval { $rhs->isa(__PACKAGE__) };
-    my $num = int($lhs >> $rhs);
-    $num &= ((Math::BigInt->new(2) ** $pow) - 1);
-    $num |= $mask;
-    return IP($num);
-}
 
-sub _band {
-    my ($lhs, $rhs, $swapped) = @_;
-    ($lhs, $rhs) = ($rhs, $lhs) if $swapped;
-    my $pow = 128;
-    my $mask = 0;
-    if ($lhs->is_ipv4) {
-        $pow = 32;
-        $mask = Math::BigInt->from_hex('ffff00000000');
+    method ipv6 {
+        if ($self->is_ipv4()) {
+            return '::ffff:'.$self->ipv4();
+        }
+        my $rv = $self->ipv6_expanded();
+        $rv =~ s/(0000:)+/:/;
+        $rv =~ s/^0+//;
+        $rv =~ s/::0+/::/;
+        $rv =~ s/^:/::/;
+        return $rv;
     }
-    $lhs = $lhs->[ 0 ] if eval { $lhs->isa(__PACKAGE__) };
-    $rhs = $rhs->[ 0 ] if eval { $rhs->isa(__PACKAGE__) };
-    my $num = int($lhs & $rhs);
-    $num &= ((Math::BigInt->new(2) ** $pow) - 1);
-    $num |= $mask;
-    return IP($num);
-}
 
-sub _bor {
-    my ($lhs, $rhs, $swapped) = @_;
-    ($lhs, $rhs) = ($rhs, $lhs) if $swapped;
-    my $pow = 128;
-    my $mask = 0;
-    if ($lhs->is_ipv4) {
-        $pow = 32;
-        $mask = Math::BigInt->from_hex('ffff00000000');
+    method str is overload('""') {
+        if ($self->is_ipv4()) {
+            return $self->ipv4();
+        }
+        return $self->ipv6();
     }
-    $lhs = $lhs->[ 0 ] if eval { $lhs->isa(__PACKAGE__) };
-    $rhs = $rhs->[ 0 ] if eval { $rhs->isa(__PACKAGE__) };
-    my $num = int($lhs | $rhs);
-    $num &= ((Math::BigInt->new(2) ** $pow) - 1);
-    $num |= $mask;
-    return IP($num);
-}
 
-sub ERROR {
-    my $msg = @_ ? shift() : 'An error has occured';
-    if ($DIE_ON_ERROR) {
-        confess($msg);
+    method _compare is overload('cmp') {
+        return $self->_spaceship(@_);
     }
-    else {
-        cluck($msg) if $^W;
+
+    method _spaceship is overload('<=>') {
+        my ($rhs, $swapped) = @_;
+        my $lhs = $self->address;
+        $lhs = [ unpack 'N4', $lhs ];
+        $rhs = eval { $rhs->address } || pack('N4', (0, 0, 0, $rhs));
+        $rhs = [ unpack 'N4', $rhs ];
+        ($lhs, $rhs) = ($rhs, $lhs) if $swapped;
+        return (1 - (2 * $swapped)) * (
+            $lhs->[ 0 ] <=> $rhs->[ 0 ]
+            || $lhs->[ 1 ] <=> $rhs->[ 1 ]
+            || $lhs->[ 2 ] <=> $rhs->[ 2 ]
+            || $lhs->[ 3 ] <=> $rhs->[ 3 ]
+        );
     }
-    return;
+
+    method _do_add is overload('+') {
+        my ($rhs, $swapped) = @_;
+        my ($pow, $mask) = $self->_pow_mask;
+        my $lhs = $self->address;
+        $lhs = [ unpack 'N4', $lhs ];
+        $rhs = eval { $rhs->address } || pack('N4', (0, 0, 0, $rhs));
+        $rhs = [ unpack 'N4', $rhs ];
+        ($lhs, $rhs) = ($rhs, $lhs) if $swapped;
+        my @l = reverse @$lhs;
+        my @r = reverse @$rhs;
+        my @rv;
+        for my $digit (0 .. 3) {
+            my $answer = $l[$digit] + $r[$digit];
+            if ($answer > (2 ** 32) - 1) {
+                $r[$digit + 1] += int($answer / (2 ** 32)) if exists $r[$digit + 1];
+                $answer = $answer % (2 ** 32);
+            }
+            push @rv, $answer;
+        }
+        @rv = $self->_mask_out($pow, $mask, reverse @rv);
+        my $retval = Net::IPAddress::Util->new(\@rv);
+        return $retval;
+    }
+
+    method _do_subtract is overload('-') {
+        my ($rhs, $swapped) = @_;
+        my ($pow, $mask) = $self->_pow_mask;
+        my $lhs = $self->address;
+        $lhs = [ unpack 'N4', $lhs ];
+        $rhs = eval { $rhs->address } || pack('N4', (0, 0, 0, $rhs));
+        $rhs = [ unpack 'N4', $rhs ];
+        ($lhs, $rhs) = ($rhs, $lhs) if $swapped;
+        my @l = reverse @$lhs;
+        my @r = reverse @$rhs;
+        my @rv;
+        for my $digit (0 .. 3) {
+            my $answer = $l[$digit] - $r[$digit];
+            if ($answer < 0) {
+                $answer += (2 ** 32) - 1;
+                $r[$digit + 1] -= 1 if exists $r[$digit + 1];
+            }
+            push @rv, $answer;
+        }
+        @rv = $self->_mask_out($pow, $mask, reverse @rv);
+        my $retval = Net::IPAddress::Util->new(\@rv);
+        return $retval;
+    }
+
+    method _shift_left is overload('<<') {
+        my ($rhs, $swapped) = @_;
+        my ($pow, $mask) = $self->_pow_mask;
+        my @l = reverse unpack('C16', $self->address);
+        my @rv;
+        for my $octet (0 .. 15) {
+            $rv[$octet] += $l[$octet] << $rhs;
+            if ($rv[$octet] > 255) {
+                my $lsb = $rv[$octet] % 256;
+                $rv[$octet + 1] += ($rv[$octet] - $lsb) >> 8 if $octet < 15;
+                $rv[$octet] = $lsb;
+            }
+        }
+        @rv = $self->_mask_out($pow, $mask, @rv);
+        return Net::IPAddress::Util->new(\@rv);
+    }
+
+    method _shift_right is overload('>>') {
+        my ($rhs, $swapped) = @_;
+        my ($pow, $mask) = $self->_pow_mask;
+        my @l = unpack('C16', $self->address);
+        my @rv;
+        for my $octet (0 .. 15) {
+            $rv[$octet] += $l[$octet] >> $rhs;
+            if (int($rv[$octet]) - $rv[$octet]) {
+                my $msb = int($rv[$octet]);
+                my $lsb = $rv[$octet] << $rhs;
+                $rv[$octet] = $msb;
+                $rv[$octet + 1] += $lsb if $octet < 15;
+            }
+        }
+        @rv = $self->_mask_out($pow, $mask, unpack('C16', pack('N4', @rv)));
+        return Net::IPAddress::Util->new(\@rv);
+    }
+
+    method _band is overload('&') {
+        my ($rhs, $swapped) = @_;
+        ($self, $rhs) = ($rhs, $self) if $swapped;
+        my $lhs = $self->address;
+        $lhs = [ unpack 'N4', $lhs ];
+        $rhs = eval { $rhs->address } || pack('N4', (0, 0, 0, $rhs));
+        $rhs = [ unpack 'N4', $rhs ];
+        ($lhs, $rhs) = ($rhs, $lhs) if $swapped;
+        my @l = @$lhs;
+        my @r = @$rhs;
+        my @rv;
+        for my $octet (0 .. 3) {
+            $rv[$octet] = $l[$octet] & $r[$octet];
+        }
+        return Net::IPAddress::Util->new(\@rv);
+    }
+
+    method _bor is overload('|') {
+        my ($rhs, $swapped) = @_;
+        ($self, $rhs) = ($rhs, $self) if $swapped;
+        my $lhs = $self->address;
+        $lhs = [ unpack 'N4', $lhs ];
+        $rhs = eval { $rhs->address } || pack('N4', (0, 0, 0, $rhs));
+        $rhs = [ unpack 'N4', $rhs ];
+        ($lhs, $rhs) = ($rhs, $lhs) if $swapped;
+        my @l = @$lhs;
+        my @r = @$rhs;
+        my @rv;
+        for my $octet (0 .. 3) {
+            $rv[$octet] = $l[$octet] | $r[$octet];
+        }
+        return Net::IPAddress::Util->new(\@rv);
+    }
+
+    method _neg is overload('~') {
+        my @n = unpack('C16', $self->address);
+        my ($pow, $mask) = $self->_pow_mask;
+        my @rv = map { 255 - $_ } @n;
+        return Net::IPAddress::Util->new(\@rv);
+    }
+
+    method _pow_mask {
+        my $pow = 128;
+        my $mask = pack('N4', 0, 0, 0, 0);
+        if ($self->is_ipv4) {
+            $pow = 32;
+            $mask = pack('N4', 0, 0, 0xffff, 0);
+        }
+        return ($pow, $mask);
+    }
+
+    method _mask_out ($pow, $mask, @rv) {
+        my @and = (0, 0, 0, 0);
+        map { $and[ 4 - $_ ] = 0xffffffff } grep { $pow / $_ >= 32 } (1 .. 4);
+        my @or = unpack('N4', $mask);
+        @rv = pairwise { $a & $b } @rv, @and;
+        @rv = pairwise { $a | $b } @rv, @or;
+        return @rv;
+    }
+
+};
+
+sub ipv4_mask {
+    return implode_ip(('0' x 80) . ('1' x 48));
 }
 
-sub explode_ip {
-    my $self = shift;
-    my $str = $self->[ 0 ]->as_bin();
-    $str =~ s/^0b//;
-    $str = substr('0' x 128 . $str, -128);
-    return split '', $str;
-}
-
-sub implode_ip {
-    my @array = @_;
-    my $str = join '', @array;
-    my $self = __PACKAGE__->new(Math::BigInt->from_bin($str));
-    return $self;
+sub ipv4_flag {
+    return implode_ip(('0' x 80) . ('1' x 16) . ('0' x 32));
 }
 
 sub common_prefix (\@\@) {
@@ -364,44 +343,59 @@ sub prefix_mask (\@\@) {
     return @rv;
 }
 
-sub ip_pad_prefix {
-    my @array = @_;
-    my $n = scalar @array;
-    return @array if $n == 128;
-    for my $i ($n .. 127) {
+sub ip_pad_prefix (\@) {
+    my @array = @{$_[0]};
+    for my $i (scalar(@array) .. 127) {
         push @array, 0;
     }
     return @array;
 }
 
-sub radix_sort {
-    # In theory, a raw radix sort is O(N), which beats Perl's O(N log N) by
-    # a fair margin. However, the overhead of transforming to (and from)
-    # normal form makes this only real-world faster for large arrays. On my
-    # personal test system, the break-even point for IPv4 addresses is
-    # somewhere between 750 and 1000 elements, and for IPv6 it's very much
-    # more than that, to the point where the system starts paging.
-    # TODO fork() into one bucket per CPU, and mergesort the result?
-    # TODO Inline::C ?
-    my %index = map { $_->normal_form() => $_ } @_;
-    my $from = [keys %index];
+sub explode_ip {
+    my $ip = shift;
+    return split //, unpack 'B128', $ip->address;
+}
+
+sub implode_ip {
+    return Net::IPAddress::Util->new([ unpack 'C16', pack 'B128', join '', map { split // } @_ ]);
+}
+
+sub n32_to_ipv4 { IP(@_) }
+
+sub ERROR {
+    my $msg = @_ ? shift() : 'An error has occured';
+    if ($DIE_ON_ERROR) {
+        confess($msg);
+    }
+    else {
+        cluck($msg) if $^W;
+    }
+    return;
+}
+
+sub radix_sort (\@) {
+    # In theory, a radix sort is O(N), which beats Perl's O(N log N) by
+    # a fair margin. However, it _does_ discard duplicates, so ymmv.
+    my $array = shift;
+    my $from = [ map { [ unpack 'C16', $_->address ] } @$array ];
     my $to;
-    for (my $i = 30; $i >= 0; $i -= 2) {
+    for (my $i = 15; $i >= 0; $i--) {
         $to = [];
         for my $card (@$from) {
-            push @{$to->[hex(substr $card, $i, 2)]}, $card;
+            push @{$to->[ $card->[ $i ] ]}, $card;
         }
-        $from = [map { @{ $_ || [] } } @$to];
+        $from = [ map { @{$_ // []} } @$to ];
     }
-    return map { $index{$_} } @$from;
+    my @rv = map { IP(pack 'C16', @$_) } @$from;
+    return @rv;
 }
 
 sub ip2num {
     carp('Compatibility function ip2num() is deprecated') if $^W;
     my $ip = shift;
-    my $self = __PACKAGE__->new($ip);
-    $self &= hex('0xffffffff');
-    return $self->as_int();
+    my $self = IP($ip);
+    $self &= ((2 ** 32) - 1);
+    return $self->as_n32();
 }
 
 sub num2ip {
@@ -425,8 +419,8 @@ sub validaddr {
 sub mask {
     carp('Compatibility function mask() is deprecated') if $^W;
     my ($ip, $mask) = @_;
-    my $self = __PACKAGE__->new($ip);
-    my $nm   = __PACKAGE__->new($mask);
+    my $self = IP($ip);
+    my $nm   = IP($mask);
     return $self & $nm;
 }
 
@@ -434,10 +428,6 @@ sub fqdn {
     carp('Compatibility function fqdn() is deprecated') if $^W;
     my $dn = shift;
     return split /\./, $dn, 2;
-}
-
-sub config {
-    return Math::BigInt->config;
 }
 
 1;
@@ -450,11 +440,11 @@ Net::IPAddress::Util - Version-agnostic representation of an IP address
 
 =head1 VERSION
 
-Version 1.002
+Version 2.000
 
 =head1 SYNOPSIS
 
-    use Net::IPAddress::Util try => 'GMP,Pari', qw( IP );
+    use Net::IPAddress::Util qw( IP );
 
     my $ipv4  = IP('192.168.0.1');
     my $ipv46 = IP('::ffff:192.168.0.1');
@@ -481,26 +471,6 @@ Net::IPAddress::Util is for working with individual addresses,
 Net::IPAddress::Util::Range is for working with individual ranges of
 addresses, and Net::IPAddress::Util::Collection is for working with
 collections of addresses and/or ranges.
-
-=head1 BACKEND LIBRARIES
-
-This module subclasses Math::BigInt, and can take the same arguments to
-control the choice of backend math libraries, specifically C<try>, C<lib>,
-and C<only>. In order, these will silently fail, fail with warn(), or fail
-with die(), if the specified backend librar(y|ies) cannot be loaded. The
-default backend (which will be fallen back to if your specified backend(s)
-cannot be loaded) is C<FastCalc>, or C<Calc> if C<FastCalc> is not available.
-
-=head2 CHOOSING A BACKEND
-
-Rule 1 is "profile before optimizing". Rule 2 is "your mileage may vary".
-Rule 3 is "your users' mileage almost certainly will vary".
-
-A general guideline seems to be that you can safely stick with the default
-if you're going to be using IPv4 addresses, or if you wont need to search &
-sort IPv6 addresses, but for searching and sorting large numbers of IPv6
-addresses, you should at least try one or both of C<GMP> and C<Pari>, and
-consider testing the relative speed of C<radix_sort()> on your platform.
 
 =head1 GLOBAL VARIABLES
 
