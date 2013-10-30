@@ -16,6 +16,7 @@ WriteMakefile(
         'Class::Std' => '0',
         'Exporter' => '0',
         'Test::More'   => '0',
+        'Time::HiRes' => '0',
         'List::MoreUtils' => '0',
         'mop' => '0',
     },

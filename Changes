@@ -1,5 +1,12 @@
 Revision history for Net-IPAddress-Util
 
+2.002   2013-10-29
+        Experimental release. Another quick hack to the Makefile.PL for weirdos
+        who don't have Time::HiRes for some reason
+
+2.001   2013-10-29
+        Experimental release. Quick hack to make it work
+
 2.000   2013-10-23
         Experimental release. Functionally pretty sound. Relies on mop and
         no longer relies on anything from bignum (goodbye GMP / Pari bugs)
