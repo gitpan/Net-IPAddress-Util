@@ -33,6 +33,7 @@
       "runtime" : {
          "requires" : {
             "Carp" : "0",
+            "Class::Std" : "0",
             "Exporter" : "0",
             "List::MoreUtils" : "0",
             "Test::More" : "0",
@@ -42,5 +43,5 @@
       }
    },
    "release_status" : "testing",
-   "version" : "2.000_TRIAL"
+   "version" : "2.001_TRIAL"
 }

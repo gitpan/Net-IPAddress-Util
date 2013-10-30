@@ -13,6 +13,7 @@ WriteMakefile(
     PL_FILES            => {},
     PREREQ_PM => {
         'Carp' => '0',
+        'Class::Std' => '0',
         'Exporter' => '0',
         'Test::More'   => '0',
         'List::MoreUtils' => '0',

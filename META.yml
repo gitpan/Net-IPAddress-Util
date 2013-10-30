@@ -19,9 +19,10 @@ no_index:
     - inc
 requires:
   Carp: 0
+  Class::Std: 0
   Exporter: 0
   List::MoreUtils: 0
   Test::More: 0
   mop: 0
   perl: 5.018000
-version: 2.000_TRIAL
+version: 2.001_TRIAL

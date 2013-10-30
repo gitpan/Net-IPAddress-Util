@@ -28,7 +28,7 @@ $EXPORT_TAGS{ all } = [@EXPORT_OK];
 our $DIE_ON_ERROR = 0;
 our $PROMOTE_N32 = 1;
 
-our $VERSION = '2.000_TRIAL';
+our $VERSION = '2.001_TRIAL';
 
 sub IP {
     return Net::IPAddress::Util->new($_[0]);
