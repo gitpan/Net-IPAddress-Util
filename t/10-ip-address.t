@@ -1,8 +1,7 @@
 #! /usr/bin/env perl
 
-use 5.018;
+use 5.016;
 
-use Data::Dumper;
 use Net::IPAddress::Util qw( :constr );
 use Net::IPAddress::Util::Range;
 use Net::IPAddress::Util::Collection;

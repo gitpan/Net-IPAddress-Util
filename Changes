@@ -1,5 +1,8 @@
 Revision history for Net-IPAddress-Util
 
+2.003   2013-10-30
+        Fix stupid remnants of "needing" 5.018
+
 2.002   2013-10-29
         Experimental release. Another quick hack to the Makefile.PL for weirdos
         who don't have Time::HiRes for some reason
