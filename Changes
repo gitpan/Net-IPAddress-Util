@@ -1,5 +1,8 @@
 Revision history for Net-IPAddress-Util
 
+2.004   2013-10-30
+        Fix more stupid remnants of "needing" 5.018
+
 2.003   2013-10-30
         Fix stupid remnants of "needing" 5.018
 

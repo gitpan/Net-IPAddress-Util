@@ -25,5 +25,5 @@ requires:
   Test::More: 0
   Time::HiRes: 0
   mop: 0
-  perl: 5.018000
-version: 2.003_TRIAL
+  perl: 5.016000
+version: 2.004_TRIAL

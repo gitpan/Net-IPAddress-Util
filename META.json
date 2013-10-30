@@ -39,10 +39,10 @@
             "Test::More" : "0",
             "Time::HiRes" : "0",
             "mop" : "0",
-            "perl" : "5.018000"
+            "perl" : "5.016000"
          }
       }
    },
    "release_status" : "testing",
-   "version" : "2.003_TRIAL"
+   "version" : "2.004_TRIAL"
 }

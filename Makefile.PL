@@ -20,7 +20,7 @@ WriteMakefile(
         'List::MoreUtils' => '0',
         'mop' => '0',
     },
-    MIN_PERL_VERSION => '5.018000',
+    MIN_PERL_VERSION => '5.016000',
     dist                => { COMPRESS => 'gzip -9f', SUFFIX => 'gz', },
     clean               => { FILES => 'Net-IPAddress-Util-*' },
 );
