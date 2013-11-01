@@ -1,6 +1,8 @@
 package Net::IPAddress::Util::Collection::Tie;
 
-use 5.016;
+use 5.008008;
+use strict;
+use warnings;
 
 use Carp qw( confess );
 use Class::Std;

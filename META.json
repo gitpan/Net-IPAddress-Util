@@ -38,11 +38,10 @@
             "List::MoreUtils" : "0",
             "Test::More" : "0",
             "Time::HiRes" : "0",
-            "mop" : "0",
-            "perl" : "5.016000"
+            "perl" : "5.008008"
          }
       }
    },
-   "release_status" : "testing",
-   "version" : "2.004_TRIAL"
+   "release_status" : "stable",
+   "version" : "1.500"
 }

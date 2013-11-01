@@ -1,7 +1,21 @@
 package Net::IPAddress::Util;
 
-use 5.016;
-use mop;
+use 5.0008008;
+use strict;
+use warnings;
+use overload (
+    '=' => 'new',
+    '""' => 'str',
+    'cmp' => '_spaceship',
+    '<=>' => '_spaceship',
+    '+' => '_do_add',
+    '-' => '_do_subtract',
+    '<<' => '_shift_left',
+    '>>' => '_shift_right',
+    '&' => '_band',
+    '|' => '_bor',
+    '~' => '_neg',
+);
 
 use Carp qw( carp cluck confess );
 use Exporter qw( import );
@@ -28,282 +42,293 @@ $EXPORT_TAGS{ all } = [@EXPORT_OK];
 our $DIE_ON_ERROR = 0;
 our $PROMOTE_N32 = 1;
 
-our $VERSION = '2.004_TRIAL';
+our $VERSION = '1.500';
 
 sub IP {
     return Net::IPAddress::Util->new($_[0]);
 }
 
-class Net::IPAddress::Util {
-
-    has $!address is ro;
-
-    method new ($address) is overload('=') {
-        my $normal;
-        if (ref($address) eq 'ARRAY' && @$address == 16) {
-            $normal = $address;
+sub new {
+    my $self = shift;
+    my $class = ref($self) || $self;
+    my ($address) = @_;
+    my $normal;
+    if (ref($address) eq 'ARRAY' && @$address == 16) {
+        $normal = $address;
+    }
+    elsif (ref($address) eq 'ARRAY' && @$address == 4) {
+        $normal = [ unpack 'C16', pack 'N4', @$address ];
+    }
+    elsif (ref $address and eval { $address->isa(__PACKAGE__) }) {
+        return bless { address => $address->{ address } } => $class;
+    }
+    elsif ($address =~ /^(?:::ffff:)?(\d+)\.(\d+)\.(\d+)\.(\d+)$/) {
+        $normal = [
+            0, 0, 0, 0,
+            0, 0, 0, 0,
+            0, 0, 0xff, 0xff,
+            $1, $2, $3, $4
+        ];
+    }
+    elsif ($PROMOTE_N32 and $address =~ /^\d+$/ and $address >= 0 and $address <= (2 ** 32) - 1) {
+        $normal = [
+            0, 0, 0, 0,
+            0, 0, 0, 0,
+            0, 0, 0xff, 0xff,
+            unpack('C4', pack('N', $address))
+        ];
+    }
+    elsif ($address =~ /^([0-9a-f:]+)(?:\%.*)?$/msoi) {
+        # new() from IPv6 address, accepting and ignoring the Scope ID
+        $address = $1;
+        my ($upper, $lower) = split /::/, $address;
+        $lower = '' unless defined $lower;
+        my $hex = '0' x 32;
+        $upper =~ s/://g;
+        $lower =~ s/://g;
+        my $missing = 4 - (length($upper) % 4);
+        $missing = 0 if $missing == 4;
+        $upper = ('0' x $missing) . $upper;
+        substr($hex, 0,                length($upper)) = $upper;
+        substr($hex, - length($lower), length($lower)) = $lower;
+        my @hex = split //, $hex;
+        $normal = [];
+        while (@hex) {
+            push @$normal, hex(join('', splice(@hex, 0, 2)));
         }
-        elsif (ref($address) eq 'ARRAY' && @$address == 4) {
-            $normal = [ unpack 'C16', pack 'N4', @$address ];
+    }
+    elsif (length($address) == 16) {
+        return bless { address => $address } => $class;
+    }
+    else {
+        confess("I can't handle `$address', a(n) " . (ref($address) || 'bare scalar'));
+    }
+    return bless { address => pack('C16', @$normal) } => $class;
+}
+
+sub is_ipv4 {
+    my $self = shift;
+    my @octets = unpack 'C16', $self->{ address };
+    return $octets[ 10 ] == 0xff && $octets[ 11 ] == 0xff && (!grep { $_ } @octets[ 0 .. 9 ]);
+}
+
+sub ipv4 {
+    my $self = shift;
+    return join '.', unpack 'C4', substr($self->{ address }, -4);
+}
+
+sub as_n32 {
+    my $self = shift;
+    return unpack 'N', substr($self->{ address }, -4);
+}
+
+sub normal_form {
+    my $self = shift;
+    my $hex = join('', map { sprintf('%02x', $_) } unpack('C16', $self->{ address }));
+    $hex = substr(('0' x 32) . $hex, -32);
+    return lc $hex;
+}
+
+sub ipv6_expanded {
+    my $self = shift;
+    my $hex = $self->normal_form();
+    my $rv;
+    while ($hex =~ /(....)/g) {
+        $rv .= ':' if defined $rv;
+        $rv .= $1;
+    }
+    return $rv;
+}
+
+sub ipv6 {
+    my $self = shift;
+    if ($self->is_ipv4()) {
+        return '::ffff:'.$self->ipv4();
+    }
+    my $rv = $self->ipv6_expanded();
+    $rv =~ s/(0000:)+/:/;
+    $rv =~ s/^0+//;
+    $rv =~ s/::0+/::/;
+    $rv =~ s/^:/::/;
+    return $rv;
+}
+
+sub str {
+    my $self = shift;
+    if ($self->is_ipv4()) {
+        return $self->ipv4();
+    }
+    return $self->ipv6();
+}
+
+sub _spaceship {
+    my $self = shift;
+    my ($rhs, $swapped) = @_;
+    my $lhs = $self->{ address };
+    $lhs = [ unpack 'N4', $lhs ];
+    $rhs = eval { $rhs->{ address } } || pack('N4', (0, 0, 0, $rhs));
+    $rhs = [ unpack 'N4', $rhs ];
+    ($lhs, $rhs) = ($rhs, $lhs) if $swapped;
+    return (1 - (2 * $swapped)) * (
+        $lhs->[ 0 ] <=> $rhs->[ 0 ]
+        || $lhs->[ 1 ] <=> $rhs->[ 1 ]
+        || $lhs->[ 2 ] <=> $rhs->[ 2 ]
+        || $lhs->[ 3 ] <=> $rhs->[ 3 ]
+    );
+}
+
+sub _do_add {
+    my $self = shift;
+    my ($rhs, $swapped) = @_;
+    my ($pow, $mask) = $self->_pow_mask;
+    my $lhs = $self->{ address };
+    $lhs = [ unpack 'N4', $lhs ];
+    $rhs = eval { $rhs->{ address } } || pack('N4', (0, 0, 0, $rhs));
+    $rhs = [ unpack 'N4', $rhs ];
+    ($lhs, $rhs) = ($rhs, $lhs) if $swapped;
+    my @l = reverse @$lhs;
+    my @r = reverse @$rhs;
+    my @rv;
+    for my $digit (0 .. 3) {
+        my $answer = $l[$digit] + $r[$digit];
+        if ($answer > (2 ** 32) - 1) {
+            $r[$digit + 1] += int($answer / (2 ** 32)) if exists $r[$digit + 1];
+            $answer = $answer % (2 ** 32);
         }
-        elsif (ref $address and eval { $address->isa(__PACKAGE__) }) {
-            return $address->clone;
+        push @rv, $answer;
+    }
+    @rv = $self->_mask_out($pow, $mask, reverse @rv);
+    my $retval = Net::IPAddress::Util->new(\@rv);
+    return $retval;
+}
+
+sub _do_subtract {
+    my $self = shift;
+    my ($rhs, $swapped) = @_;
+    my ($pow, $mask) = $self->_pow_mask;
+    my $lhs = $self->{ address };
+    $lhs = [ unpack 'N4', $lhs ];
+    $rhs = eval { $rhs->{ address } } || pack('N4', (0, 0, 0, $rhs));
+    $rhs = [ unpack 'N4', $rhs ];
+    ($lhs, $rhs) = ($rhs, $lhs) if $swapped;
+    my @l = reverse @$lhs;
+    my @r = reverse @$rhs;
+    my @rv;
+    for my $digit (0 .. 3) {
+        my $answer = $l[$digit] - $r[$digit];
+        if ($answer < 0) {
+            $answer += (2 ** 32) - 1;
+            $r[$digit + 1] -= 1 if exists $r[$digit + 1];
         }
-        elsif ($address =~ /^(?:::ffff:)?(\d+)\.(\d+)\.(\d+)\.(\d+)$/) {
-            $normal = [
-                0, 0, 0, 0,
-                0, 0, 0, 0,
-                0, 0, 0xff, 0xff,
-                $1, $2, $3, $4
-            ];
+        push @rv, $answer;
+    }
+    @rv = $self->_mask_out($pow, $mask, reverse @rv);
+    my $retval = Net::IPAddress::Util->new(\@rv);
+    return $retval;
+}
+
+sub _shift_left {
+    my $self = shift;
+    my ($rhs, $swapped) = @_;
+    my ($pow, $mask) = $self->_pow_mask;
+    my @l = reverse unpack('C16', $self->{ address });
+    my @rv;
+    for my $octet (0 .. 15) {
+        $rv[$octet] += $l[$octet] << $rhs;
+        if ($rv[$octet] > 255) {
+            my $lsb = $rv[$octet] % 256;
+            $rv[$octet + 1] += ($rv[$octet] - $lsb) >> 8 if $octet < 15;
+            $rv[$octet] = $lsb;
         }
-        elsif ($PROMOTE_N32 and $address =~ /^\d+$/ and $address >= 0 and $address <= (2 ** 32) - 1) {
-            $normal = [
-                0, 0, 0, 0,
-                0, 0, 0, 0,
-                0, 0, 0xff, 0xff,
-                unpack('C4', pack('N', $address))
-            ];
+    }
+    @rv = $self->_mask_out($pow, $mask, @rv);
+    return Net::IPAddress::Util->new(\@rv);
+}
+
+sub _shift_right {
+    my $self = shift;
+    my ($rhs, $swapped) = @_;
+    my ($pow, $mask) = $self->_pow_mask;
+    my @l = unpack('C16', $self->{ address });
+    my @rv;
+    for my $octet (0 .. 15) {
+        $rv[$octet] += $l[$octet] >> $rhs;
+        if (int($rv[$octet]) - $rv[$octet]) {
+            my $msb = int($rv[$octet]);
+            my $lsb = $rv[$octet] << $rhs;
+            $rv[$octet] = $msb;
+            $rv[$octet + 1] += $lsb if $octet < 15;
         }
-        elsif ($address =~ /^([0-9a-f:]+)(?:\%.*)?$/msoi) {
-            # new() from IPv6 address, accepting and ignoring the Scope ID
-            $address = $1;
-            my ($upper, $lower) = split /::/, $address;
-            $lower = '' unless defined $lower;
-            my $hex = '0' x 32;
-            $upper =~ s/://g;
-            $lower =~ s/://g;
-            my $missing = 4 - (length($upper) % 4);
-            $missing = 0 if $missing == 4;
-            $upper = ('0' x $missing) . $upper;
-            substr($hex, 0,                length($upper)) = $upper;
-            substr($hex, - length($lower), length($lower)) = $lower;
-            my @hex = split //, $hex;
-            $normal = [];
-            while (@hex) {
-                push @$normal, hex(join('', splice(@hex, 0, 2)));
-            }
-        }
-        elsif (length($address) == 16) {
-            return $self->next::method(address => $address);
-        }
-        else {
-            confess("I can't handle `$address', a(n) " . (ref($address) || 'bare scalar'));
-        }
-        return $self->next::method(address => pack('C16', @$normal));
     }
+    @rv = $self->_mask_out($pow, $mask, unpack('C16', pack('N4', @rv)));
+    return Net::IPAddress::Util->new(\@rv);
+}
 
-    method is_ipv4 {
-        my @octets = unpack 'C16', $!address;
-        return $octets[ 10 ] == 0xff && $octets[ 11 ] == 0xff && (!grep { $_ } @octets[ 0 .. 9 ]);
+sub _band {
+    my $self = shift;
+    my ($rhs, $swapped) = @_;
+    ($self, $rhs) = ($rhs, $self) if $swapped;
+    my $lhs = $self->{ address };
+    $lhs = [ unpack 'N4', $lhs ];
+    $rhs = eval { $rhs->{ address } } || pack('N4', (0, 0, 0, $rhs));
+    $rhs = [ unpack 'N4', $rhs ];
+    ($lhs, $rhs) = ($rhs, $lhs) if $swapped;
+    my @l = @$lhs;
+    my @r = @$rhs;
+    my @rv;
+    for my $octet (0 .. 3) {
+        $rv[$octet] = $l[$octet] & $r[$octet];
     }
+    return Net::IPAddress::Util->new(\@rv);
+}
 
-    method ipv4 {
-        return join '.', unpack 'C4', substr($!address, -4);
+sub _bor {
+    my $self = shift;
+    my ($rhs, $swapped) = @_;
+    ($self, $rhs) = ($rhs, $self) if $swapped;
+    my $lhs = $self->{ address };
+    $lhs = [ unpack 'N4', $lhs ];
+    $rhs = eval { $rhs->{ address } } || pack('N4', (0, 0, 0, $rhs));
+    $rhs = [ unpack 'N4', $rhs ];
+    ($lhs, $rhs) = ($rhs, $lhs) if $swapped;
+    my @l = @$lhs;
+    my @r = @$rhs;
+    my @rv;
+    for my $octet (0 .. 3) {
+        $rv[$octet] = $l[$octet] | $r[$octet];
     }
+    return Net::IPAddress::Util->new(\@rv);
+}
 
-    method as_n32 {
-        return unpack 'N', substr($!address, -4);
+sub _neg {
+    my $self = shift;
+    my @n = unpack('C16', $self->{ address });
+    my ($pow, $mask) = $self->_pow_mask;
+    my @rv = map { 255 - $_ } @n;
+    return Net::IPAddress::Util->new(\@rv);
+}
+
+sub _pow_mask {
+    my $self = shift;
+    my $pow = 128;
+    my $mask = pack('N4', 0, 0, 0, 0);
+    if ($self->is_ipv4) {
+        $pow = 32;
+        $mask = pack('N4', 0, 0, 0xffff, 0);
     }
+    return ($pow, $mask);
+}
 
-    method normal_form {
-        my $hex = join('', map { sprintf('%02x', $_) } unpack('C16', $!address));
-        $hex = substr(('0' x 32) . $hex, -32);
-        return lc $hex;
-    }
-
-    method ipv6_expanded {
-        my $hex = $self->normal_form();
-        my $rv;
-        while ($hex =~ /(....)/g) {
-            $rv .= ':' if defined $rv;
-            $rv .= $1;
-        }
-        return $rv;
-    }
-
-    method ipv6 {
-        if ($self->is_ipv4()) {
-            return '::ffff:'.$self->ipv4();
-        }
-        my $rv = $self->ipv6_expanded();
-        $rv =~ s/(0000:)+/:/;
-        $rv =~ s/^0+//;
-        $rv =~ s/::0+/::/;
-        $rv =~ s/^:/::/;
-        return $rv;
-    }
-
-    method str is overload('""') {
-        if ($self->is_ipv4()) {
-            return $self->ipv4();
-        }
-        return $self->ipv6();
-    }
-
-    method _compare is overload('cmp') {
-        return $self->_spaceship(@_);
-    }
-
-    method _spaceship is overload('<=>') {
-        my ($rhs, $swapped) = @_;
-        my $lhs = $self->address;
-        $lhs = [ unpack 'N4', $lhs ];
-        $rhs = eval { $rhs->address } || pack('N4', (0, 0, 0, $rhs));
-        $rhs = [ unpack 'N4', $rhs ];
-        ($lhs, $rhs) = ($rhs, $lhs) if $swapped;
-        return (1 - (2 * $swapped)) * (
-            $lhs->[ 0 ] <=> $rhs->[ 0 ]
-            || $lhs->[ 1 ] <=> $rhs->[ 1 ]
-            || $lhs->[ 2 ] <=> $rhs->[ 2 ]
-            || $lhs->[ 3 ] <=> $rhs->[ 3 ]
-        );
-    }
-
-    method _do_add is overload('+') {
-        my ($rhs, $swapped) = @_;
-        my ($pow, $mask) = $self->_pow_mask;
-        my $lhs = $self->address;
-        $lhs = [ unpack 'N4', $lhs ];
-        $rhs = eval { $rhs->address } || pack('N4', (0, 0, 0, $rhs));
-        $rhs = [ unpack 'N4', $rhs ];
-        ($lhs, $rhs) = ($rhs, $lhs) if $swapped;
-        my @l = reverse @$lhs;
-        my @r = reverse @$rhs;
-        my @rv;
-        for my $digit (0 .. 3) {
-            my $answer = $l[$digit] + $r[$digit];
-            if ($answer > (2 ** 32) - 1) {
-                $r[$digit + 1] += int($answer / (2 ** 32)) if exists $r[$digit + 1];
-                $answer = $answer % (2 ** 32);
-            }
-            push @rv, $answer;
-        }
-        @rv = $self->_mask_out($pow, $mask, reverse @rv);
-        my $retval = Net::IPAddress::Util->new(\@rv);
-        return $retval;
-    }
-
-    method _do_subtract is overload('-') {
-        my ($rhs, $swapped) = @_;
-        my ($pow, $mask) = $self->_pow_mask;
-        my $lhs = $self->address;
-        $lhs = [ unpack 'N4', $lhs ];
-        $rhs = eval { $rhs->address } || pack('N4', (0, 0, 0, $rhs));
-        $rhs = [ unpack 'N4', $rhs ];
-        ($lhs, $rhs) = ($rhs, $lhs) if $swapped;
-        my @l = reverse @$lhs;
-        my @r = reverse @$rhs;
-        my @rv;
-        for my $digit (0 .. 3) {
-            my $answer = $l[$digit] - $r[$digit];
-            if ($answer < 0) {
-                $answer += (2 ** 32) - 1;
-                $r[$digit + 1] -= 1 if exists $r[$digit + 1];
-            }
-            push @rv, $answer;
-        }
-        @rv = $self->_mask_out($pow, $mask, reverse @rv);
-        my $retval = Net::IPAddress::Util->new(\@rv);
-        return $retval;
-    }
-
-    method _shift_left is overload('<<') {
-        my ($rhs, $swapped) = @_;
-        my ($pow, $mask) = $self->_pow_mask;
-        my @l = reverse unpack('C16', $self->address);
-        my @rv;
-        for my $octet (0 .. 15) {
-            $rv[$octet] += $l[$octet] << $rhs;
-            if ($rv[$octet] > 255) {
-                my $lsb = $rv[$octet] % 256;
-                $rv[$octet + 1] += ($rv[$octet] - $lsb) >> 8 if $octet < 15;
-                $rv[$octet] = $lsb;
-            }
-        }
-        @rv = $self->_mask_out($pow, $mask, @rv);
-        return Net::IPAddress::Util->new(\@rv);
-    }
-
-    method _shift_right is overload('>>') {
-        my ($rhs, $swapped) = @_;
-        my ($pow, $mask) = $self->_pow_mask;
-        my @l = unpack('C16', $self->address);
-        my @rv;
-        for my $octet (0 .. 15) {
-            $rv[$octet] += $l[$octet] >> $rhs;
-            if (int($rv[$octet]) - $rv[$octet]) {
-                my $msb = int($rv[$octet]);
-                my $lsb = $rv[$octet] << $rhs;
-                $rv[$octet] = $msb;
-                $rv[$octet + 1] += $lsb if $octet < 15;
-            }
-        }
-        @rv = $self->_mask_out($pow, $mask, unpack('C16', pack('N4', @rv)));
-        return Net::IPAddress::Util->new(\@rv);
-    }
-
-    method _band is overload('&') {
-        my ($rhs, $swapped) = @_;
-        ($self, $rhs) = ($rhs, $self) if $swapped;
-        my $lhs = $self->address;
-        $lhs = [ unpack 'N4', $lhs ];
-        $rhs = eval { $rhs->address } || pack('N4', (0, 0, 0, $rhs));
-        $rhs = [ unpack 'N4', $rhs ];
-        ($lhs, $rhs) = ($rhs, $lhs) if $swapped;
-        my @l = @$lhs;
-        my @r = @$rhs;
-        my @rv;
-        for my $octet (0 .. 3) {
-            $rv[$octet] = $l[$octet] & $r[$octet];
-        }
-        return Net::IPAddress::Util->new(\@rv);
-    }
-
-    method _bor is overload('|') {
-        my ($rhs, $swapped) = @_;
-        ($self, $rhs) = ($rhs, $self) if $swapped;
-        my $lhs = $self->address;
-        $lhs = [ unpack 'N4', $lhs ];
-        $rhs = eval { $rhs->address } || pack('N4', (0, 0, 0, $rhs));
-        $rhs = [ unpack 'N4', $rhs ];
-        ($lhs, $rhs) = ($rhs, $lhs) if $swapped;
-        my @l = @$lhs;
-        my @r = @$rhs;
-        my @rv;
-        for my $octet (0 .. 3) {
-            $rv[$octet] = $l[$octet] | $r[$octet];
-        }
-        return Net::IPAddress::Util->new(\@rv);
-    }
-
-    method _neg is overload('~') {
-        my @n = unpack('C16', $self->address);
-        my ($pow, $mask) = $self->_pow_mask;
-        my @rv = map { 255 - $_ } @n;
-        return Net::IPAddress::Util->new(\@rv);
-    }
-
-    method _pow_mask {
-        my $pow = 128;
-        my $mask = pack('N4', 0, 0, 0, 0);
-        if ($self->is_ipv4) {
-            $pow = 32;
-            $mask = pack('N4', 0, 0, 0xffff, 0);
-        }
-        return ($pow, $mask);
-    }
-
-    method _mask_out ($pow, $mask, @rv) {
-        my @and = (0, 0, 0, 0);
-        map { $and[ 4 - $_ ] = 0xffffffff } grep { $pow / $_ >= 32 } (1 .. 4);
-        my @or = unpack('N4', $mask);
-        @rv = pairwise { $a & $b } @rv, @and;
-        @rv = pairwise { $a | $b } @rv, @or;
-        return @rv;
-    }
-
-};
+sub _mask_out {
+    my $self = shift;
+    my ($pow, $mask, @rv) = @_;
+    my @and = (0, 0, 0, 0);
+    map { $and[ 4 - $_ ] = 0xffffffff } grep { $pow / $_ >= 32 } (1 .. 4);
+    my @or = unpack('N4', $mask);
+    @rv = pairwise { $a & $b } @rv, @and;
+    @rv = pairwise { $a | $b } @rv, @or;
+    return @rv;
+}
 
 sub ipv4_mask {
     return implode_ip(('0' x 80) . ('1' x 48));
@@ -353,7 +378,7 @@ sub ip_pad_prefix (\@) {
 
 sub explode_ip {
     my $ip = shift;
-    return split //, unpack 'B128', $ip->address;
+    return split //, unpack 'B128', $ip->{ address };
 }
 
 sub implode_ip {
@@ -377,7 +402,7 @@ sub radix_sort (\@) {
     # In theory, a radix sort is O(N), which beats Perl's O(N log N) by
     # a fair margin. However, it _does_ discard duplicates, so ymmv.
     my $array = shift;
-    my $from = [ map { [ unpack 'C16', $_->address ] } @$array ];
+    my $from = [ map { [ unpack 'C16', $_->{ address } ] } @$array ];
     my $to;
     for (my $i = 15; $i >= 0; $i--) {
         $to = [];

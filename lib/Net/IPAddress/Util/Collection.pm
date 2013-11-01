@@ -1,6 +1,8 @@
 package Net::IPAddress::Util::Collection;
 
-use 5.016;
+use 5.008008;
+use strict;
+use warnings;
 
 require Net::IPAddress::Util;
 require Net::IPAddress::Util::Collection::Tie;
@@ -20,7 +22,7 @@ sub sorted {
     my $self = shift;
     # In theory, a raw radix sort is O(N), which beats Perl's O(N log N) by
     # a fair margin. However, it _does_ discard duplicates, so ymmv.
-    my $from = [ map { [ unpack('C32', $_->lower->address . $_->upper->address) ] } @$self ];
+    my $from = [ map { [ unpack('C32', $_->{ lower }->{ address } . $_->{ upper }->{ address }) ] } @$self ];
     my $to;
     for (my $i = 31; $i >= 0; $i--) {
         $to = [];
@@ -45,8 +47,8 @@ sub compacted {
     my @compacted;
     my $elem;
     while ($elem = shift @sorted) {
-        if (scalar @sorted and $elem->upper >= $sorted[0]->lower - 1) {
-            $elem = ref($elem)->new({ lower => $elem->lower, upper => $sorted[0]->upper });
+        if (scalar @sorted and $elem->{ upper } >= $sorted[0]->{ lower } - 1) {
+            $elem = ref($elem)->new({ lower => $elem->{ lower }, upper => $sorted[0]->{ upper } });
             shift @sorted;
             redo;
         }
@@ -66,17 +68,17 @@ sub tight {
 
 sub as_cidrs {
     my $self = shift;
-    return map { $_->as_cidr() } grep { eval { $_->lower } } @$self;
+    return map { $_->as_cidr() } grep { eval { $_->{ lower } } } @$self;
 }
 
 sub as_netmasks {
     my $self = shift;
-    return map { $_->as_netmask() } grep { eval { $_->lower } } @$self;
+    return map { $_->as_netmask() } grep { eval { $_->{ lower } } } @$self;
 }
 
 sub as_ranges {
     my $self = shift;
-    return map { $_->as_string() } grep { eval { $_->lower } } @$self;
+    return map { $_->as_string() } grep { eval { $_->{ lower } } } @$self;
 }
 
 1;

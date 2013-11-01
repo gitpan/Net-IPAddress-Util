@@ -41,7 +41,7 @@ else {
                     @psorted = sort { $a <=> $b } @to_sort;
                     $tp = time - $p;
                 }
-                $savings += ($tp - $tr) / $tp;
+                $savings += eval { ($tp - $tr) / $tp };
             }
         }
         $savings = (0 - $savings) / $mult;
@@ -68,7 +68,7 @@ else {
                     @psorted = sort { $a <=> $b } @to_sort;
                     $tp = time - $p;
                 }
-                $savings += ($tp - $tr) / $tp;
+                $savings += eval { ($tp - $tr) / $tp };
             }
         }
         $savings = (0 - $savings) / $mult;
@@ -96,7 +96,7 @@ else {
                     @psorted = sort { $a <=> $b } @$coll;
                     $tp = time - $p;
                 }
-                $savings += ($tp - $tr) / $tp;
+                $savings += eval { ($tp - $tr) / $tp };
             }
         }
         $savings = (0 - $savings) / $mult;
