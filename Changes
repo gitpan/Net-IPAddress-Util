@@ -1,5 +1,8 @@
 Revision history for Net-IPAddress-Util
 
+3.000   2013-11-01
+        Back to proper CPAN-friendly version numbers
+
 1.500   2013-10-31
         Attempt to backport the 2.x speedups and fixes into a non-mop env.
 

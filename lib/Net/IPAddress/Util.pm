@@ -42,7 +42,7 @@ $EXPORT_TAGS{ all } = [@EXPORT_OK];
 our $DIE_ON_ERROR = 0;
 our $PROMOTE_N32 = 1;
 
-our $VERSION = '1.500';
+our $VERSION = '3.000';
 
 sub IP {
     return Net::IPAddress::Util->new($_[0]);

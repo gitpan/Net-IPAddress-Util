@@ -1,6 +1,6 @@
 #! /usr/bin/env perl
 
-use 5.016;
+use 5.008008;
 
 use Net::IPAddress::Util qw( :constr );
 use Net::IPAddress::Util::Range;

@@ -5,10 +5,13 @@ use strict;
 use warnings;
 
 use Carp qw( confess );
-use Class::Std;
-require Net::IPAddress::Util::Range;
 
-my %contents :ATTR( :name<contents> :default<[]> );
+sub new {
+    my $class = shift;
+    $class = ref($class) || $class;
+    my ($arg_ref) = @_;
+    return bless $arg_ref => $class;
+}
 
 sub TIEARRAY {
     my ($class, $contents) = @_;
@@ -19,61 +22,61 @@ sub TIEARRAY {
 
 sub FETCH {
     my ($self, $i) = @_;
-    return $self->get_contents()->[ $i ];
+    return $self->{ contents }->[ $i ];
 }
 
 sub STORE {
     my ($self, $i, $v) = @_;
-    $self->get_contents()->[ $i ] = _checktype($v);
+    $self->{ contents }->[ $i ] = _checktype($v);
     return $v;
 }
 
 sub FETCHSIZE {
     my ($self) = @_;
-    return scalar @{$self->get_contents()};
+    return scalar @{$self->{ contents }};
 }
 
 sub EXISTS {
     my ($self, $i) = @_;
-    return exists $self->get_contents()->[ $i ];
+    return exists $self->{ contents }->[ $i ];
 }
 
 sub DELETE {
     my ($self, $i) = @_;
-    return delete $self->get_contents()->[ $i ];
+    return delete $self->{ contents }->[ $i ];
 }
 
 sub CLEAR {
     my ($self) = @_;
     $self->set_contents([]);
-    return $self->get_contents();
+    return $self->{ contents };
 }
 
 sub PUSH {
     my ($self, @l) = @_;
-    push @{$self->get_contents()}, map { _checktype($_) } @l;
+    push @{$self->{ contents }}, map { _checktype($_) } @l;
 }
 
 sub POP {
     my ($self) = @_;
-    return pop @{$self->get_contents()};
+    return pop @{$self->{ contents }};
 }
 
 sub UNSHIFT {
     my ($self, @l) = @_;
-    unshift @{$self->get_contents()}, map { _checktype($_) } @l;
+    unshift @{$self->{ contents }}, map { _checktype($_) } @l;
 }
 
 sub SHIFT {
     my ($self) = @_;
-    return shift @{$self->get_contents()};
+    return shift @{$self->{ contents }};
 }
 
 sub SPLICE {
     my ($self, $offset, $length, @l) = @_;
     $offset = 0 unless defined $offset;
     $length = $self->FETCHSIZE() - $offset unless defined $length;
-    return splice @{$self->get_contents()}, $offset, $length, map { _checktype($_) } @l;
+    return splice @{$self->{ contents }}, $offset, $length, map { _checktype($_) } @l;
 }
 
 sub _checktype {
