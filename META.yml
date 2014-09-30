@@ -25,4 +25,4 @@ requires:
   Test::More: '0'
   Time::HiRes: '0'
   perl: '5.012000'
-version: '3.015'
+version: '3.016'
